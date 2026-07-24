@@ -1,0 +1,6 @@
+{
+  "name": "Iman Tracker",
+  "description": "A comprehensive Islamic prayer tracker and daily zikar journal featuring progress statistics and beautiful interactive heatmaps.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,98 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Amiri+Quran&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-arabic: "Amiri Quran", serif;
+
+  --color-brand-50: #edfaf4;
+  --color-brand-100: #d1fae9;
+  --color-brand-500: #13956a;
+  --color-brand-600: #12956a;
+  --color-brand-700: #0d6e4e;
+  --color-brand-400: #1dbf87;
+  
+  --animate-fade-in: fadeIn 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  --animate-slide-up: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:root {
+  --g1: #0d6e4e;
+  --g2: #13956a;
+  --g3: #1dbf87;
+  --g4: #d1fae9;
+  --g5: #edfaf4;
+  --r1: #c0392b;
+  --r2: #e74c3c;
+  --r3: #fde8e8;
+  --y1: #ea580c;
+  --y3: #fff7ed;
+  --b1: #2563eb;
+  --b3: #eff6ff;
+  --bg: #F3F4F6;
+  --surface: #ffffff;
+  --surface2: #F9FAFB;
+  --surface3: #F3F4F6;
+  --border: #F3F4F6;
+  --border2: #E5E7EB;
+  --text: #111827;
+  --text2: #4B5563;
+  --text3: #9CA3AF;
+  --shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 20px 40px -8px rgba(0, 0, 0, 0.1);
+  --radius: 24px;
+  --radius-sm: 14px;
+  --nav-h: 80px;
+}
+
+[data-theme="dark"] {
+  --bg: #0B0F19;
+  --surface: #111827;
+  --surface2: #1F2937;
+  --surface3: #374151;
+  --border: #1F2937;
+  --border2: #374151;
+  --text: #F9FAFB;
+  --text2: #9CA3AF;
+  --text3: #6B7280;
+  --g4: #0d6e4e;
+  --g5: #064e3b;
+  --r3: #451a03;
+  --y3: #431407;
+  --b3: #172554;
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+/* Custom Utilities */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Ensure smooth native-like app scrolling */
+body {
+  font-family: "Outfit", sans-serif;
+  overscroll-behavior-y: contain;
+  background-color: var(--bg);
+  color: var(--text);
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Arabic Quran Font styling */
+.arabic-font {
+  font-family: "Amiri Quran", serif;
+}
