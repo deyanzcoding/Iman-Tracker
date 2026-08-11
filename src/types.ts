@@ -41,7 +41,7 @@ export interface AppState {
   namaz: NamazData;
   duas: Zikar[];
   deletedDuas: Zikar[];
-  goal: number;
+  goal: number; zikarGoal: number; quranGoal: number;
   bestStreak: number;
   dark: boolean;
   lastActiveDate: string;

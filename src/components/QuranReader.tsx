@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Document, Page, pdfjs } from 'react-pdf';
 import { 
   Book, 
   Folder, 
@@ -18,8 +19,14 @@ import {
   Clock, 
   FileText,
   HelpCircle,
-  FileDown
+  FileDown,
+  Bookmark,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
+
+// Configure pdfjs worker to run in browser matching react-pdf version
+pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 interface ParaItem {
   number: number;
@@ -127,17 +134,55 @@ async function getAllLoadedParaNumbers(): Promise<number[]> {
   }
 }
 
+import { User } from 'firebase/auth';
+import { saveUserFileMetadata } from '../utils/firebase';
+
 interface QuranReaderProps {
   isOnline: boolean;
   showToast: (msg: string) => void;
+  currentUser?: User | null;
 }
 
-export default function QuranReader({ isOnline, showToast }: QuranReaderProps) {
+export default function QuranReader({ isOnline, showToast, currentUser }: QuranReaderProps) {
   const [loadedParaNumbers, setLoadedParaNumbers] = useState<number[]>([]);
   const [activePara, setActivePara] = useState<ParaItem | null>(null);
   const [activeBlobUrl, setActiveBlobUrl] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showBookmarks, setShowBookmarks] = useState(false);
   const [isHoveredInfo, setIsHoveredInfo] = useState(false);
+
+  // PDF controls
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [pageNumber, setPageNumber] = useState<number>(1);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState<number>(300);
+
+  // Measure container for responsive PDF
+  useEffect(() => {
+    if (activeBlobUrl && containerRef.current) {
+      setContainerWidth(containerRef.current.clientWidth);
+    }
+    const handleResize = () => {
+      if (containerRef.current) setContainerWidth(containerRef.current.clientWidth);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [activeBlobUrl]);
+
+  // Bookmarks tracker (saved in localStorage as { [paraNumber]: pageNumber })
+  const [bookmarks, setBookmarks] = useState<Record<number, number>>(() => {
+    try {
+      const saved = localStorage.getItem('namaztrack_quran_bookmarks');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Save bookmarks to local storage
+  useEffect(() => {
+    localStorage.setItem('namaztrack_quran_bookmarks', JSON.stringify(bookmarks));
+  }, [bookmarks]);
 
   // Read time tracker (saved in localStorage as { [paraNumber]: seconds })
   const [readTimes, setReadTimes] = useState<Record<number, number>>(() => {
@@ -213,6 +258,8 @@ export default function QuranReader({ isOnline, showToast }: QuranReaderProps) {
         const url = URL.createObjectURL(blob);
         setActiveBlobUrl(url);
         setActivePara(para);
+        setPageNumber(bookmarks[para.number] || 1);
+        setNumPages(null);
         showToast(`📖 Reading Para ${para.number} offline natively!`);
       } else {
         showToast(`❌ Para ${para.number} PDF is not loaded. Please load it first!`);
@@ -267,6 +314,15 @@ export default function QuranReader({ isOnline, showToast }: QuranReaderProps) {
       const paraNum = parseParaNumberFromFilename(file.name);
       if (paraNum) {
         await savePdf(paraNum, file);
+        if (currentUser) {
+          saveUserFileMetadata(currentUser.uid, {
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type || 'application/pdf',
+            uploadDate: new Date().toISOString(),
+            paraNumber: paraNum
+          }).catch(console.error);
+        }
         successCount++;
       } else {
         failedFiles.push(`${file.name} (Couldn't detect Para 1-30)`);
@@ -293,6 +349,15 @@ export default function QuranReader({ isOnline, showToast }: QuranReaderProps) {
     }
     try {
       await savePdf(paraNum, file);
+      if (currentUser) {
+        saveUserFileMetadata(currentUser.uid, {
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type || 'application/pdf',
+          uploadDate: new Date().toISOString(),
+          paraNumber: paraNum
+        }).catch(console.error);
+      }
       const updated = await getAllLoadedParaNumbers();
       setLoadedParaNumbers(updated);
       showToast(`✅ Saved Para ${paraNum} PDF securely offline!`);
@@ -327,6 +392,26 @@ export default function QuranReader({ isOnline, showToast }: QuranReaderProps) {
   };
 
   // Top header stats
+  const handleBookmarkCurrentPage = () => {
+    if (activePara) {
+      setBookmarks(prev => ({
+        ...prev,
+        [activePara.number]: pageNumber
+      }));
+      showToast(`🔖 Bookmarked page ${pageNumber} for Para ${activePara.number}!`);
+    }
+  };
+
+  const handleRemoveBookmark = (paraNum: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setBookmarks(prev => {
+      const updated = { ...prev };
+      delete updated[paraNum];
+      return updated;
+    });
+    showToast(`🗑️ Bookmark removed for Para ${paraNum}`);
+  };
+
   const totalReadCount = useMemo(() => {
     return Object.keys(readTimes).filter(k => readTimes[parseInt(k)] > 0).length;
   }, [readTimes]);
@@ -346,60 +431,23 @@ export default function QuranReader({ isOnline, showToast }: QuranReaderProps) {
   return (
     <div className="flex flex-col gap-4 animate-fade-in pb-12">
       
-      {/* Quran Tab Branding Header */}
-      <div className="relative overflow-hidden flex-shrink-0 bg-gradient-to-br from-[#12956a] to-[#1dbf87] p-5 pb-6 rounded-3xl text-white shadow-sm">
-        <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/10 rounded-full blur-xl pointer-events-none" />
-        <div className="absolute -left-10 -bottom-10 w-32 h-32 bg-black/10 rounded-full blur-xl pointer-events-none" />
-
-        <div className="flex items-start justify-between relative z-10">
-          <div>
-            <div className="flex items-center gap-2 mb-3.5">
-              <span className="font-arabic font-extrabold text-2xl leading-none">القرآن الكريم</span>
-            </div>
-            <h1 className="font-sans font-extrabold text-lg tracking-wide leading-none text-white/95 mt-2">THE HOLY QURAN</h1>
-            <div className="text-[9px] uppercase font-bold tracking-wider text-white/80 mt-1.5">30 Juz / Paras Reader</div>
-          </div>
-
-          <div className="flex gap-1.5">
-            {/* Read Count Badge */}
-            <div className="rounded-xl py-1 px-2.5 text-center bg-white/10 backdrop-blur-md border border-white/20 text-white min-w-[50px]">
-              <div className="text-sm font-black leading-none">{totalReadCount}</div>
-              <div className="text-[7px] font-extrabold uppercase mt-0.5 tracking-wider text-white/90">Read</div>
-            </div>
-            {/* Total Time Badge */}
-            <div className="rounded-xl py-1 px-2.5 text-center bg-white/10 backdrop-blur-md border border-white/20 text-white min-w-[64px]">
-              <div className="text-sm font-black leading-none truncate">{formatTimeStr(totalReadTimeSecs)}</div>
-              <div className="text-[7px] font-extrabold uppercase mt-0.5 tracking-wider text-white/90">Time</div>
-            </div>
-          </div>
+      {/* Search, Upload and Bookmarks Header */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 bg-[var(--surface)] border border-[var(--border2)] rounded-[20px] px-4 py-3 flex items-center gap-3 shadow-sm">
+          <Search className="w-4 h-4 text-[var(--text3)] shrink-0" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search Para..."
+            className="bg-transparent border-none outline-none text-sm font-medium text-[var(--text)] w-full placeholder:text-[var(--text3)]"
+          />
         </div>
-      </div>
-
-      {/* Search Input bar */}
-      <div className="w-full bg-[var(--surface)] border border-[var(--border2)] rounded-[20px] px-4 py-3 flex items-center gap-3 shadow-sm">
-        <Search className="w-4 h-4 text-[var(--text3)] shrink-0" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search Para..."
-          className="bg-transparent border-none outline-none text-sm font-medium text-[var(--text)] w-full placeholder:text-[var(--text3)]"
-        />
-      </div>
-
-      {/* Upload files box (Persistent Local Storage) */}
-      <div className="rounded-2xl p-5 border-2 border-dashed border-[#1dbf87]/30 bg-emerald-500/5 dark:bg-emerald-500/10 flex flex-col items-center text-center relative overflow-hidden">
-        <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-2.5">
-          <Folder className="w-6 h-6 fill-amber-500 text-amber-500 stroke-[1.5]" />
-        </div>
-        <h4 className="text-sm font-bold text-[var(--text)]">Load Your Para PDFs</h4>
-        <p className="text-[10px] text-[var(--text2)] max-w-[280px] leading-relaxed mt-1">
-          Select all 30 Para files at once. They stay saved in your secure local browser storage permanently.
-        </p>
-        
-        <label className="mt-4 px-4 py-2.5 bg-[#1dbf87] hover:bg-[#13956a] text-white text-[11px] font-extrabold uppercase tracking-widest rounded-xl shadow-sm cursor-pointer transition-all flex items-center gap-2">
-          <Upload className="w-3.5 h-3.5 stroke-[2.5]" />
-          Select Para Files (up to 30)
+        <label 
+          className="p-3 rounded-[20px] border border-[var(--border2)] bg-[var(--surface)] text-[var(--text)] hover:border-purple-500/50 cursor-pointer shrink-0 transition-colors flex items-center justify-center active:scale-95" 
+          title="Upload Para PDFs"
+        >
+          <Upload className="w-5 h-5 text-purple-600 dark:text-purple-400" />
           <input 
             type="file" 
             multiple 
@@ -408,12 +456,106 @@ export default function QuranReader({ isOnline, showToast }: QuranReaderProps) {
             className="hidden" 
           />
         </label>
+        <button
+          onClick={() => setShowBookmarks(!showBookmarks)}
+          className={`p-3 rounded-[20px] border shrink-0 transition-all active:scale-95 flex items-center gap-1.5 ${
+            showBookmarks 
+              ? 'bg-purple-600 border-purple-600 text-white shadow-md' 
+              : 'bg-[var(--surface)] border-[var(--border2)] text-[var(--text)]'
+          }`}
+          title="Saved Bookmarks"
+        >
+          <Bookmark className="w-5 h-5 fill-current" />
+          {Object.keys(bookmarks).length > 0 && (
+            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+              showBookmarks ? 'bg-purple-800 text-purple-100' : 'bg-purple-500 text-white'
+            }`}>
+              {Object.keys(bookmarks).length}
+            </span>
+          )}
+        </button>
       </div>
+
+      {/* Redesigned Bookmarks Section */}
+      {showBookmarks && (
+        <div className="bg-[var(--surface)] border border-[var(--border2)] rounded-2xl p-4 flex flex-col gap-3 shadow-md animate-fade-in">
+          <div className="flex items-center justify-between border-b border-[var(--border2)] pb-3">
+            <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400 font-bold text-sm">
+              <Bookmark className="w-4 h-4 fill-purple-600 dark:fill-purple-400" />
+              <span>Saved Bookmarks</span>
+              <span className="text-[11px] font-semibold text-[var(--text3)] bg-[var(--surface2)] px-2 py-0.5 rounded-full">
+                {Object.keys(bookmarks).length}
+              </span>
+            </div>
+            {Object.keys(bookmarks).length > 0 && (
+              <button
+                onClick={() => {
+                  setBookmarks({});
+                  showToast("🗑️ All bookmarks cleared");
+                }}
+                className="text-[11px] font-medium text-red-500 hover:text-red-600 dark:hover:text-red-400 transition-colors flex items-center gap-1"
+              >
+                <Trash2 className="w-3 h-3" />
+                Clear All
+              </button>
+            )}
+          </div>
+
+          {Object.keys(bookmarks).length === 0 ? (
+            <div className="text-[var(--text3)] text-xs text-center py-6 flex flex-col items-center gap-2">
+              <Bookmark className="w-8 h-8 opacity-20" />
+              <span>No bookmarks saved yet. Bookmark pages while reading!</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[300px] overflow-y-auto pr-1">
+              {Object.entries(bookmarks).map(([paraNumStr, page]) => {
+                const paraNum = parseInt(paraNumStr);
+                const pInfo = PARAS_DATA.find(p => p.number === paraNum);
+                return (
+                  <div 
+                    key={paraNum} 
+                    className="flex items-center justify-between bg-[var(--surface2)] p-3 rounded-xl border border-[var(--border2)] hover:border-purple-500/40 transition-all group"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 font-extrabold text-xs flex items-center justify-center shrink-0">
+                        {paraNum}
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-[var(--text)] truncate">{pInfo?.name || `Para ${paraNum}`}</span>
+                          <span className="text-[10px] text-purple-500 font-arabic">{pInfo?.arabicName}</span>
+                        </div>
+                        <span className="text-[10px] text-[var(--text3)] font-medium">Page {page}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      <button
+                        onClick={() => pInfo && handleOpenPara(pInfo)}
+                        className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition-all active:scale-95 shadow-sm"
+                      >
+                        Resume
+                      </button>
+                      <button
+                        onClick={(e) => handleRemoveBookmark(paraNum, e)}
+                        className="p-1.5 text-[var(--text3)] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                        title="Remove bookmark"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Grid Legend */}
       <div className="flex items-center justify-between text-[10px] font-bold text-[var(--text3)] uppercase px-1">
         <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+          <span className="w-2 h-2 rounded-full bg-purple-500" />
           <span>Loaded</span>
         </div>
         <div className="flex items-center gap-1.5">
@@ -434,7 +576,7 @@ export default function QuranReader({ isOnline, showToast }: QuranReaderProps) {
               onClick={() => isLoaded ? handleOpenPara(para) : null}
               className={`relative rounded-[20px] p-3 border flex flex-col items-center text-center justify-between min-h-[114px] transition-all group ${
                 isLoaded 
-                  ? 'bg-[var(--surface)] border-[var(--border2)] hover:border-[#1dbf87]/50 hover:shadow-sm cursor-pointer' 
+                  ? 'bg-[var(--surface)] border-[var(--border2)] hover:border-purple-500/50 hover:shadow-sm cursor-pointer' 
                   : 'bg-[var(--surface2)] border-[var(--border)] opacity-75'
               }`}
             >
@@ -445,7 +587,7 @@ export default function QuranReader({ isOnline, showToast }: QuranReaderProps) {
 
               {/* Loader Dot Indicator Top Right */}
               <div className="absolute top-2.5 right-2.5 flex items-center">
-                <span className={`w-1.5 h-1.5 rounded-full ${isLoaded ? 'bg-emerald-500' : 'bg-neutral-300 dark:bg-neutral-700'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${isLoaded ? 'bg-purple-500' : 'bg-neutral-300 dark:bg-neutral-700'}`} />
               </div>
 
               {/* Para Name & Number */}
@@ -453,7 +595,7 @@ export default function QuranReader({ isOnline, showToast }: QuranReaderProps) {
                 <span className="text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-tight leading-none">
                   {para.number} PARA
                 </span>
-                <span className="font-arabic text-[#13956a] text-sm font-bold mt-1.5 h-5 flex items-center truncate max-w-[90px]">
+                <span className="font-arabic text-purple-600 dark:text-purple-400 text-sm font-bold mt-1.5 h-5 flex items-center truncate max-w-[90px]">
                   {para.arabicName}
                 </span>
               </div>
@@ -502,7 +644,7 @@ export default function QuranReader({ isOnline, showToast }: QuranReaderProps) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 100 }}
             transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-            className="absolute inset-0 bg-neutral-950 z-50 flex flex-col"
+            className="fixed inset-0 bg-neutral-950 z-50 flex flex-col"
           >
             {/* Header bar */}
             <div className="px-4 py-3 border-b border-neutral-800 flex items-center justify-between bg-neutral-900 text-white">
@@ -516,54 +658,71 @@ export default function QuranReader({ isOnline, showToast }: QuranReaderProps) {
 
               <div className="text-center">
                 <div className="flex items-center justify-center gap-1">
-                  <span className="text-[11px] font-black text-emerald-400">Juz {activePara.number}</span>
-                  <span className="font-arabic text-emerald-400 font-bold">{activePara.arabicName}</span>
+                  <span className="text-[11px] font-black text-purple-400">Juz {activePara.number}</span>
+                  <span className="font-arabic text-purple-400 font-bold">{activePara.arabicName}</span>
                 </div>
                 <h2 className="text-xs font-bold text-neutral-300 leading-none mt-0.5">{activePara.name}</h2>
               </div>
 
               {/* Timer indicator */}
-              <div className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
+              <div className="text-[10px] font-bold text-purple-400 flex items-center gap-1">
                 <Clock className="w-3 h-3 animate-pulse" />
                 <span>⏱ {formatTimeStr(readTimes[activePara.number] || 0)}</span>
               </div>
             </div>
 
             {/* Sub Info Status Bar */}
-            <div className="px-4 py-1.5 bg-neutral-950 text-neutral-400 text-[9px] font-bold flex items-center justify-between border-b border-neutral-900 shrink-0 select-none">
-              <span>NATIVE BROWSER OFFLINE READER</span>
-              <span className="text-emerald-400 uppercase">File loaded securely from device</span>
+            <div className="px-4 py-2 bg-neutral-950 text-neutral-400 text-[10px] font-bold flex items-center justify-between border-b border-neutral-900 shrink-0 select-none">
+              <span className="text-purple-400 uppercase">File loaded securely from device</span>
+              <button 
+                onClick={handleBookmarkCurrentPage}
+                className="flex items-center gap-1 bg-purple-600 hover:bg-purple-500 text-white px-2 py-1 rounded transition-colors"
+              >
+                <Bookmark className="w-3.5 h-3.5" />
+                Bookmark Page {pageNumber}
+              </button>
             </div>
 
             {/* Native PDF Render Canvas Area */}
-            <div className="flex-1 bg-neutral-900 overflow-hidden relative flex flex-col">
-              {/* Fallback & Fullscreen Help Bar */}
-              <div className="p-3 bg-emerald-500/10 text-emerald-300 text-[10px] font-bold text-center flex flex-wrap items-center justify-center gap-2 border-b border-emerald-500/20">
-                <span>If the PDF doesn't load below, you can:</span>
-                <a 
-                  href={activeBlobUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-black transition-colors uppercase text-[9px]"
+            <div className="flex-1 bg-neutral-900 overflow-hidden relative flex flex-col items-center">
+              <div 
+                ref={containerRef}
+                className="flex-1 w-full max-w-3xl overflow-y-auto bg-neutral-900 flex justify-center pb-8 pt-4 custom-scrollbar"
+              >
+                <Document
+                  file={activeBlobUrl}
+                  onLoadSuccess={({ numPages }) => setNumPages(numPages)}
+                  loading={<div className="text-purple-400 text-sm font-bold mt-10 animate-pulse">Loading PDF...</div>}
                 >
-                  Open Fullscreen ↗
-                </a>
-                <span>or</span>
-                <a 
-                  href={activeBlobUrl} 
-                  download={`Para-${String(activePara.number).padStart(2, '0')}.pdf`}
-                  className="px-2.5 py-1 bg-neutral-700 hover:bg-neutral-600 text-white rounded font-black transition-colors uppercase text-[9px]"
-                >
-                  Download File ⬇
-                </a>
+                  <Page
+                    pageNumber={pageNumber}
+                    width={containerWidth ? Math.min(containerWidth - 32, 800) : 300}
+                    className="shadow-2xl rounded-sm overflow-hidden"
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
+                  />
+                </Document>
               </div>
 
-              <div className="flex-1 relative bg-neutral-900">
-                <iframe
-                  src={activeBlobUrl}
-                  className="w-full h-full bg-neutral-900 border-none"
-                  title={`Para ${activePara.number} Reader`}
-                />
+              {/* Pagination Controls (RTL layout) */}
+              <div className="w-full max-w-3xl flex items-center justify-between bg-neutral-950 p-4 border-t border-neutral-800 shrink-0 shadow-lg">
+                <button 
+                  disabled={numPages ? pageNumber >= numPages : false} 
+                  onClick={() => setPageNumber(p => p + 1)}
+                  className="p-3 bg-neutral-800 text-white rounded-full disabled:opacity-50 hover:bg-neutral-700 active:scale-95 transition-all"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <span className="text-white font-bold text-sm tracking-wider">
+                  PAGE {pageNumber} {numPages ? <span className="text-neutral-500">/ {numPages}</span> : ''}
+                </span>
+                <button 
+                  disabled={pageNumber <= 1} 
+                  onClick={() => setPageNumber(p => p - 1)}
+                  className="p-3 bg-neutral-800 text-white rounded-full disabled:opacity-50 hover:bg-neutral-700 active:scale-95 transition-all"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
               </div>
             </div>
           </motion.div>

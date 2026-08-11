@@ -54,12 +54,11 @@ export default function Analytics({ namaz, duas, goal }: AnalyticsProps) {
 
   const heatmapRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    // Automatically scroll to the right to focus on the current month/latest dates by default
-    if (heatmapRef.current) {
-      heatmapRef.current.scrollLeft = heatmapRef.current.scrollWidth;
-    }
-  }, [hmYear, hmType]);
+useEffect(() => {
+  if (heatmapRef.current) {
+    heatmapRef.current.scrollLeft = 0;
+  }
+}, [hmYear, hmType]);
 
   const tday = today();
 
@@ -73,7 +72,7 @@ export default function Analytics({ namaz, duas, goal }: AnalyticsProps) {
       dd.setDate(now.getDate() - i);
       const ds = fmtDate(dd.getFullYear(), dd.getMonth() + 1, dd.getDate());
       
-      const allPrayed = PRAYERS.every((p) => (namaz[ds]?.[p.k] ?? 0) === 1);
+      const allPrayed = PRAYERS.some((p) => (namaz[ds]?.[p.k] ?? 0) > 0);
       if (allPrayed) {
         streak++;
       } else {
@@ -92,7 +91,7 @@ export default function Analytics({ namaz, duas, goal }: AnalyticsProps) {
       dd.setDate(scanDate.getDate() + i);
       const ds = fmtDate(dd.getFullYear(), dd.getMonth() + 1, dd.getDate());
 
-      const allPrayed = PRAYERS.every((p) => (namaz[ds]?.[p.k] ?? 0) === 1);
+      const allPrayed = PRAYERS.some((p) => (namaz[ds]?.[p.k] ?? 0) > 0);
       if (allPrayed) {
         cur++;
         if (cur > best) best = cur;
@@ -327,29 +326,51 @@ export default function Analytics({ namaz, duas, goal }: AnalyticsProps) {
     return Array.from(yearsSet).sort((a, b) => b - a);
   }, [namaz]);
 
-  const getHeatmapColorClass = (type: 'namaz' | 'zikar' | 'quran', count: number, isFuture: boolean, ds: string) => {
-    if (isFuture) return 'bg-[var(--surface3)] opacity-20 pointer-events-none';
-    
-    if (type === 'namaz') {
-      if (count === 0) return 'bg-[var(--surface3)] border border-[var(--border)]';
-      if (count === 1) return 'bg-[#12956a]/20 dark:bg-[#12956a]/30';
-      if (count === 2) return 'bg-[#12956a]/40 dark:bg-[#12956a]/50';
-      if (count === 3) return 'bg-[#12956a]/60 dark:bg-[#12956a]/70';
-      if (count === 4) return 'bg-[#12956a]/80 dark:bg-[#12956a]/90';
-      return 'bg-[#12956a] shadow-sm';
-    } else if (type === 'quran') {
-      if (count === 0) return 'bg-[var(--surface3)] border border-[var(--border)]';
-      return 'bg-purple-500 shadow-sm';
-    } else {
-      const zStats = getZikarCompletionStats(ds);
-      if (zStats.total === 0 || zStats.completed === 0) return 'bg-[var(--surface3)] border border-[var(--border)]';
-      const ratio = zStats.completed / zStats.total;
-      if (ratio <= 0.25) return 'bg-blue-500/30';
-      if (ratio <= 0.50) return 'bg-blue-500/50';
-      if (ratio <= 0.75) return 'bg-blue-500/70';
-      return 'bg-blue-500 shadow-sm';
-    }
-  };
+const getHeatmapColorClass = (
+  type: 'namaz' | 'zikar' | 'quran',
+  count: number,
+  isFuture: boolean,
+  ds: string
+) => {
+  if (isFuture) return 'bg-[var(--surface3)] opacity-20 pointer-events-none';
+
+  // NAMAZ (Green Gradient - Strong & Clear)
+  if (type === 'namaz') {
+    if (count === 0) return 'bg-[var(--surface3)] border border-[var(--border)]';
+
+    if (count === 1) return 'bg-green-300 dark:bg-green-400';
+    if (count === 2) return 'bg-green-400 dark:bg-green-500';
+    if (count === 3) return 'bg-green-500 dark:bg-green-600';
+    if (count === 4) return 'bg-green-600 dark:bg-green-700';
+
+    return 'bg-green-700 shadow-md'; // max intensity
+  }
+
+  // QURAN (Purple Gradient)
+  if (type === 'quran') {
+    if (count === 0) return 'bg-[var(--surface3)] border border-[var(--border)]';
+
+    if (count === 1) return 'bg-purple-300 dark:bg-purple-400';
+    if (count === 2) return 'bg-purple-400 dark:bg-purple-500';
+
+    return 'bg-purple-600 shadow-md';
+  }
+
+  // ZIKAR (Blue Gradient based on ratio)
+  const zStats = getZikarCompletionStats(ds);
+
+  if (zStats.total === 0 || zStats.completed === 0) {
+    return 'bg-[var(--surface3)] border border-[var(--border)]';
+  }
+
+  const ratio = zStats.completed / zStats.total;
+
+  if (ratio <= 0.25) return 'bg-blue-300 dark:bg-blue-400';
+  if (ratio <= 0.50) return 'bg-blue-400 dark:bg-blue-500';
+  if (ratio <= 0.75) return 'bg-blue-500 dark:bg-blue-600';
+
+  return 'bg-blue-700 shadow-md';
+};
 
   const handleCellInteractive = (e: React.MouseEvent, ds: string | null) => {
     if (!ds || ds > tday) return;
@@ -695,10 +716,10 @@ export default function Analytics({ namaz, duas, goal }: AnalyticsProps) {
           <span>Less</span>
           <div className="flex gap-1">
             <div className={`w-[11px] h-[11px] rounded-[3px] bg-[var(--surface3)] border border-[var(--border)]`} />
-            <div className={`w-[11px] h-[11px] rounded-[3px] ${hmType === 'namaz' ? 'bg-[#12956a]/20' : hmType === 'quran' ? 'bg-purple-500/30' : 'bg-blue-500/30'}`} />
-            <div className={`w-[11px] h-[11px] rounded-[3px] ${hmType === 'namaz' ? 'bg-[#12956a]/40' : hmType === 'quran' ? 'bg-purple-500/50' : 'bg-blue-500/50'}`} />
-            <div className={`w-[11px] h-[11px] rounded-[3px] ${hmType === 'namaz' ? 'bg-[#12956a]/60' : hmType === 'quran' ? 'bg-purple-500/70' : 'bg-blue-500/70'}`} />
-            <div className={`w-[11px] h-[11px] rounded-[3px] ${hmType === 'namaz' ? 'bg-[#12956a]/80' : hmType === 'quran' ? 'bg-purple-500' : 'bg-blue-500'}`} />
+            <div className={`w-[11px] h-[11px] rounded-[3px] ${hmType === 'namaz' ? 'bg-[#12956a]/30' : hmType === 'quran' ? 'bg-purple-500/30' : 'bg-blue-500/40'}`} />
+            <div className={`w-[11px] h-[11px] rounded-[3px] ${hmType === 'namaz' ? 'bg-[#12956a]/50' : hmType === 'quran' ? 'bg-purple-500/50' : 'bg-blue-500/60'}`} />
+            <div className={`w-[11px] h-[11px] rounded-[3px] ${hmType === 'namaz' ? 'bg-[#12956a]/70' : hmType === 'quran' ? 'bg-purple-500/70' : 'bg-blue-500/80'}`} />
+            <div className={`w-[11px] h-[11px] rounded-[3px] ${hmType === 'namaz' ? 'bg-[#12956a]/90' : hmType === 'quran' ? 'bg-purple-500' : 'bg-blue-500'}`} />
           </div>
           <span>More</span>
           <span className="ml-auto font-medium italic">

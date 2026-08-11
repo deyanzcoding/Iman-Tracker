@@ -14,8 +14,11 @@ import Analytics from './components/Analytics';
 import Settings from './components/Settings';
 import BottomSheet from './components/BottomSheet';
 import ConfirmDialog from './components/ConfirmDialog';
-import { Home, BookOpen, Book, BarChart2, Settings as SettingsIcon } from 'lucide-react';
+import AuthModal from './components/AuthModal';
+import { Home, BookOpen, Book, BarChart2, BarChart3, Activity, Settings as SettingsIcon, User as UserIcon, ShieldCheck } from 'lucide-react';
 import appLogo from './assets/images/favicon_1784528732122.jpg';
+import { User } from 'firebase/auth';
+import { subscribeToAuthChanges, getUserAppData, saveUserAppData } from './utils/firebase';
 
 export default function App() {
   // ─── LOCAL STORAGE PERSISTENCE LAZY INITIALIZER ───
@@ -59,7 +62,7 @@ export default function App() {
         }
       ],
       deletedDuas: [],
-      goal: 90,
+      goal: 90, zikarGoal: 90, quranGoal: 90,
       bestStreak: 0,
       dark: false,
       lastActiveDate: tday,
@@ -76,6 +79,8 @@ export default function App() {
         if (!parsed.duas) parsed.duas = [];
         if (!parsed.deletedDuas) parsed.deletedDuas = [];
         if (typeof parsed.goal !== 'number') parsed.goal = 90;
+        if (typeof parsed.zikarGoal !== 'number') parsed.zikarGoal = 90;
+        if (typeof parsed.quranGoal !== 'number') parsed.quranGoal = 90;
         if (typeof parsed.bestStreak !== 'number') parsed.bestStreak = 0;
         if (typeof parsed.dark !== 'boolean') parsed.dark = false;
         if (!parsed.pendingSyncQueue) parsed.pendingSyncQueue = [];
@@ -99,6 +104,35 @@ export default function App() {
 
     return defaults;
   });
+
+  // ─── AUTH & CLOUD SYNC STATE ───
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToAuthChanges((user) => {
+      setCurrentUser(user);
+      if (user) {
+        // Sync cloud data on login
+        getUserAppData(user.uid).then((cloudState) => {
+          if (cloudState) {
+            setState((prev) => ({
+              ...prev,
+              ...cloudState
+            }));
+          }
+        }).catch(console.error);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Save state to cloud on state updates when logged in
+  useEffect(() => {
+    if (currentUser) {
+      saveUserAppData(currentUser.uid, state).catch(console.error);
+    }
+  }, [state, currentUser]);
 
   // ─── NAV STATE ───
   const [activeTab, setActiveTab] = useState<'namaz' | 'dua' | 'quran' | 'progress' | 'settings'>('namaz');
@@ -165,9 +199,9 @@ export default function App() {
   };
 
   // ─── TOAST NOTIFICATION ENGINE ───
-  const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
-  const showToast = (msg: string) => {
-    setToast({ message: msg, visible: true });
+  const [toast, setToast] = useState<{ message: string; visible: boolean; type?: string }>({ message: '', visible: false, type: 'default' });
+  const showToast = (msg: string, customType?: string) => {
+    setToast({ message: msg, visible: true, type: customType || activeTab });
   };
   useEffect(() => {
     if (toast.visible) {
@@ -207,6 +241,52 @@ export default function App() {
     return { prayedCount, missedCount, percentage };
   }, [state.namaz]);
 
+  const zikarMetrics = useMemo(() => {
+    let completed = 0;
+    let remaining = 0;
+    let totalDua = state.duas.length;
+    state.duas.forEach(d => {
+      let dDone = 0;
+      let dRem = 0;
+      d.sessions.forEach(s => {
+        if (s >= d.target) dDone++;
+        else dRem++;
+      });
+      completed += dDone;
+      remaining += dRem;
+    });
+    const percentage = (completed + remaining) > 0 ? Math.round((completed / (completed + remaining)) * 100) : 0;
+    return { completed, remaining, totalDua, percentage };
+  }, [state.duas]);
+
+  const [quranDailyTimes, setQuranDailyTimes] = useState<Record<string, number>>({});
+  
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('namaztrack_quran_daily_times');
+      if (saved) setQuranDailyTimes(JSON.parse(saved));
+    } catch {}
+    
+    // Poll for updates in case the user reads and it updates the local storage
+    const interval = setInterval(() => {
+      try {
+        const saved = localStorage.getItem('namaztrack_quran_daily_times');
+        if (saved) setQuranDailyTimes(JSON.parse(saved));
+      } catch {}
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const quranMetrics = useMemo(() => {
+    const dStr = today();
+    const todayMins = Math.round((quranDailyTimes[dStr] || 0) / 60);
+    const dates = weekDates();
+    const weekMins = dates.reduce((acc, d) => acc + Math.round((quranDailyTimes[d] || 0) / 60), 0);
+    const totalMins = Object.values(quranDailyTimes).reduce((acc: number, v: number) => acc + Math.round(v / 60), 0);
+    const percentage = Math.min(100, Math.round((todayMins / 15) * 100)); // assuming 15 mins daily goal for progress bar
+    return { todayMins, weekMins, totalMins, percentage };
+  }, [quranDailyTimes]);
+
   // ─── NAMAZ CYCLING CONTROLS ───
   const handleCycleCell = (date: string, prayer: PrayerKey) => {
     const currentVal = state.namaz[date]?.[prayer] ?? 0;
@@ -231,7 +311,7 @@ export default function App() {
         dd.setDate(now.getDate() - i);
         const ds = `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}-${String(dd.getDate()).padStart(2, '0')}`;
         
-        const allPrayed = PRAYERS.every((p) => (updatedNamaz[ds]?.[p.k] ?? 0) === 1);
+        const allPrayed = PRAYERS.some((p) => (updatedNamaz[ds]?.[p.k] ?? 0) > 0);
         if (allPrayed) {
           curStreak++;
           if (curStreak > maxBest) maxBest = curStreak;
@@ -252,7 +332,7 @@ export default function App() {
   const handleIncrementZikar = (idx: number, delta: number) => {
     setState((prev) => {
       const updatedDuas = [...prev.duas];
-      const d = updatedDuas[idx];
+      const d = { ...updatedDuas[idx] };
       const sessions = Array.isArray(d.sessions) ? [...d.sessions] : [];
       const daily = Math.max(1, d.daily);
 
@@ -303,7 +383,7 @@ export default function App() {
   const handleResetZikar = (idx: number) => {
     setState((prev) => {
       const updatedDuas = [...prev.duas];
-      const d = updatedDuas[idx];
+      const d = { ...updatedDuas[idx] };
       const daily = Math.max(1, d.daily);
       
       d.sessions = Array.from({ length: daily }, () => 0);
@@ -413,13 +493,23 @@ export default function App() {
 
   // ─── CLEAR DATA PIPELINE ───
   const [clearTarget, setClearTarget] = useState<'namaz' | 'zikar' | 'both' | null>(null);
-  const handleRequestClearData = (target: 'namaz' | 'zikar' | 'both') => {
+  const handleRequestClearData = (target: 'namaz' | 'zikar' | 'quran' | 'both') => {
     setClearTarget(target);
     setConfirmType('clear_data');
   };
 
   const executeClearData = () => {
     if (!clearTarget) return;
+
+    if (clearTarget === 'quran' || clearTarget === 'both') {
+      try {
+        localStorage.removeItem('namaztrack_quran_daily_times');
+        setQuranDailyTimes({});
+        indexedDB.deleteDatabase("QuranPdfsDB");
+      } catch (e) {
+        console.error('Error clearing quran data', e);
+      }
+    }
 
     setState((prev) => {
       let updatedNamaz = { ...prev.namaz };
@@ -492,6 +582,7 @@ export default function App() {
     const msgs = {
       namaz: '🕌 Namaz records cleared',
       zikar: '📿 Zikar records cleared',
+      quran: '📖 Quran records cleared',
       both: '🗑️ All data reset successfully'
     };
     showToast(msgs[clearTarget]);
@@ -501,21 +592,21 @@ export default function App() {
   // ─── POPUP OVERLAYS ENGINE ───
   const [confirmType, setConfirmType] = useState<'permanent_delete' | 'purge_bin' | 'clear_data' | null>(null);
   const [isGoalSheetOpen, setIsGoalSheetOpen] = useState(false);
-  const [goalInputValue, setGoalInputValue] = useState<number>(state.goal);
+  const [goalInputs, setGoalInputs] = useState({ namaz: state.goal, zikar: state.zikarGoal || 90, quran: state.quranGoal || 90 });
 
   const handleOpenGoalSheet = () => {
-    setGoalInputValue(state.goal);
+    setGoalInputs({ namaz: state.goal, zikar: state.zikarGoal || 90, quran: state.quranGoal || 90 });
     setIsGoalSheetOpen(true);
   };
 
   const handleSaveGoal = () => {
-    if (goalInputValue < 1 || goalInputValue > 100) {
-      showToast('Enter a valid percentage (1-100)');
+    if (goalInputs.namaz < 1 || goalInputs.namaz > 100 || goalInputs.zikar < 1 || goalInputs.zikar > 100 || goalInputs.quran < 1 || goalInputs.quran > 100) {
+      showToast('Enter valid percentages (1-100)');
       return;
     }
-    setState((prev) => ({ ...prev, goal: goalInputValue }));
+    setState((prev) => ({ ...prev, goal: goalInputs.namaz, zikarGoal: goalInputs.zikar, quranGoal: goalInputs.quran }));
     setIsGoalSheetOpen(false);
-    showToast(`🎯 Monthly goal set to ${goalInputValue}%`);
+    showToast(`🎯 Monthly goals updated`);
   };
 
   const [isZikarSheetOpen, setIsZikarSheetOpen] = useState(false);
@@ -532,7 +623,7 @@ export default function App() {
     setZkArabic('');
     setZkTrans('');
     setZkTarget(33);
-    setZkDaily(3);
+    setZkDaily(1);
     setIsZikarSheetOpen(true);
   };
 
@@ -610,7 +701,7 @@ export default function App() {
       dd.setDate(now.getDate() - i);
       const ds = `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}-${String(dd.getDate()).padStart(2, '0')}`;
       
-      const allPrayed = PRAYERS.every((p) => (state.namaz[ds]?.[p.k] ?? 0) === 1);
+      const allPrayed = PRAYERS.some((p) => (state.namaz[ds]?.[p.k] ?? 0) > 0);
       if (allPrayed) streak++;
       else break;
     }
@@ -693,7 +784,11 @@ export default function App() {
           className="flex-1 overflow-y-auto no-scrollbar flex flex-col pb-24"
         >
           {/* APP HEADER */}
-          <div className="relative overflow-hidden flex-shrink-0 bg-gradient-to-br from-[#12956a] to-[#1dbf87] p-3 pb-4 text-white mb-2">
+          <div className={`relative overflow-hidden flex-shrink-0 bg-gradient-to-br p-3 pb-4 text-white mb-2 ${
+            activeTab === 'dua' ? 'from-blue-600 to-blue-400' : 
+            activeTab === 'quran' ? 'from-purple-600 to-purple-400' : 
+            'from-[#12956a] to-[#1dbf87]'
+          }`}>
             {/* Subtle Decorative Circular Shapes */}
             <div className="absolute -right-10 -top-10 w-44 h-44 bg-white/10 rounded-full blur-xl pointer-events-none" />
             <div className="absolute -left-10 -bottom-10 w-36 h-36 bg-black/10 rounded-full blur-xl pointer-events-none" />
@@ -707,41 +802,98 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Streak Tracker Badge - Glassmorphism Card */}
-              <div className="rounded-2xl py-1.5 px-3 text-center bg-white/10 backdrop-blur-md border border-white/20 text-white shadow-sm min-w-[70px]">
-                <div className="text-2xl font-black leading-none">{streakCount}</div>
-                <div className="text-[8px] font-extrabold uppercase mt-1 tracking-wider text-white/90">Day Streak</div>
+              {/* Right side controls: Account Pill + Streak Badge */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white transition-all active:scale-95 text-[11px] font-bold shadow-sm"
+                  title={currentUser ? `Logged in as ${currentUser.email}` : "Sign In or Create Account"}
+                >
+                  {currentUser ? (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="max-w-[70px] truncate">{currentUser.displayName || currentUser.email?.split('@')[0] || 'User'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserIcon className="w-3.5 h-3.5" />
+                      <span>Sign In</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Streak Tracker Badge - Glassmorphism Card */}
+                <div className="rounded-2xl py-1.5 px-3 text-center bg-white/10 backdrop-blur-md border border-white/20 text-white shadow-sm min-w-[65px]">
+                  <div className="text-xl font-black leading-none">{streakCount}</div>
+                  <div className="text-[8px] font-extrabold uppercase mt-1 tracking-wider text-white/90">Streak</div>
+                </div>
               </div>
             </div>
 
             {/* Quick Header Stats Cards - Beautiful Glassmorphism Cards */}
             <div className="grid grid-cols-3 gap-2 mt-3 relative z-10">
-              <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
-                <div className="text-lg font-black leading-none text-white">{weeklyCompletionMetrics.prayedCount}</div>
-                <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Prayed</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
-                <div className="text-lg font-black leading-none text-white">{weeklyCompletionMetrics.missedCount}</div>
-                <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Missed</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
-                <div className="text-lg font-black leading-none text-white">{state.bestStreak}</div>
-                <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Best</div>
-              </div>
+              {activeTab === 'dua' ? (
+                <>
+                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                    <div className="text-lg font-black leading-none text-white">{zikarMetrics.completed}</div>
+                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Done</div>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                    <div className="text-lg font-black leading-none text-white">{zikarMetrics.remaining}</div>
+                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Left</div>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                    <div className="text-lg font-black leading-none text-white">{zikarMetrics.totalDua}</div>
+                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Zikars</div>
+                  </div>
+                </>
+              ) : activeTab === 'quran' ? (
+                <>
+                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                    <div className="text-lg font-black leading-none text-white">{quranMetrics.todayMins}<span className="text-[10px] ml-0.5">m</span></div>
+                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Today</div>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                    <div className="text-lg font-black leading-none text-white">{quranMetrics.weekMins}<span className="text-[10px] ml-0.5">m</span></div>
+                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">This Week</div>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                    <div className="text-lg font-black leading-none text-white">{quranMetrics.totalMins}<span className="text-[10px] ml-0.5">m</span></div>
+                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Total</div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                    <div className="text-lg font-black leading-none text-white">{weeklyCompletionMetrics.prayedCount}</div>
+                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Prayed</div>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                    <div className="text-lg font-black leading-none text-white">{weeklyCompletionMetrics.missedCount}</div>
+                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Missed</div>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                    <div className="text-lg font-black leading-none text-white">{state.bestStreak}</div>
+                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Best</div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Weekly progress Bar */}
             <div className="mt-3 relative z-10">
-              <div className="text-[10px] font-bold text-white/85 uppercase tracking-wider mb-1.5">Weekly Completion</div>
+              <div className="text-[10px] font-bold text-white/85 uppercase tracking-wider mb-1.5">
+                {activeTab === 'dua' ? 'Daily Zikar Progress' : activeTab === 'quran' ? 'Daily Reading Goal (15m)' : 'Weekly Completion'}
+              </div>
               <div className="flex items-center gap-3">
                 <div className="flex-1 h-1.5 rounded-full bg-white/25 overflow-hidden">
                   <div
                     className="h-full bg-white rounded-full transition-all duration-500 ease-out"
-                    style={{ width: `${weeklyCompletionMetrics.percentage}%` }}
+                    style={{ width: `${activeTab === 'dua' ? zikarMetrics.percentage : activeTab === 'quran' ? quranMetrics.percentage : weeklyCompletionMetrics.percentage}%` }}
                   />
                 </div>
                 <div className="text-xs font-black text-white min-w-[32px] text-right">
-                  {weeklyCompletionMetrics.percentage}%
+                  {activeTab === 'dua' ? zikarMetrics.percentage : activeTab === 'quran' ? quranMetrics.percentage : weeklyCompletionMetrics.percentage}%
                 </div>
               </div>
             </div>
@@ -774,7 +926,7 @@ export default function App() {
           )}
 
           {activeTab === 'quran' && (
-            <QuranReader isOnline={true} showToast={showToast} />
+            <QuranReader isOnline={true} showToast={showToast} currentUser={currentUser} />
           )}
 
           {activeTab === 'progress' && (
@@ -792,6 +944,8 @@ export default function App() {
               onPermanentDeleteZikar={handlePermanentDeleteZikar}
               onPurgeRecycleBin={handlePurgeRecycleBin}
               onClearData={handleRequestClearData}
+              currentUser={currentUser}
+              onOpenAuthModal={() => setIsAuthModalOpen(true)}
             />
           )}
           </div>
@@ -815,7 +969,7 @@ export default function App() {
               activeTab === 'dua' ? 'text-brand-500' : 'text-[var(--text3)] hover:text-[var(--text2)] opacity-60 hover:opacity-100'
             }`}
           >
-            <BookOpen className={`w-[20px] h-[20px] transition-transform ${activeTab === 'dua' ? 'scale-110 text-brand-500' : ''}`} />
+            <BarChart2 className={`w-[20px] h-[20px] transition-transform ${activeTab === 'dua' ? 'scale-110 text-brand-500' : ''}`} />
             <span>Zikar</span>
             {activeTab === 'dua' && <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand-500" />}
           </button>
@@ -835,7 +989,7 @@ export default function App() {
               activeTab === 'progress' ? 'text-brand-500' : 'text-[var(--text3)] hover:text-[var(--text2)] opacity-60 hover:opacity-100'
             }`}
           >
-            <BarChart2 className={`w-[20px] h-[20px] transition-transform ${activeTab === 'progress' ? 'scale-110 text-brand-500' : ''}`} />
+            <Activity className={`w-[20px] h-[20px] transition-transform ${activeTab === 'progress' ? 'scale-110 text-brand-500' : ''}`} />
             <span>Progress</span>
             {activeTab === 'progress' && <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand-500" />}
           </button>
@@ -854,24 +1008,54 @@ export default function App() {
         {/* ─── OVERLAYS & SHEETS ─── */}
 
         {/* Goal Set Bottom Sheet */}
-        <BottomSheet isOpen={isGoalSheetOpen} onClose={() => setIsGoalSheetOpen(false)} title="Set Monthly Goal">
+        <BottomSheet isOpen={isGoalSheetOpen} onClose={() => setIsGoalSheetOpen(false)} title="Set Monthly Goals">
           <div className="flex flex-col gap-4">
-            <div>
-              <label className="text-[11px] font-bold text-[var(--text2)] uppercase tracking-wider block mb-1.5">
-                Target Completion Percentage
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="100"
-                value={goalInputValue || ''}
-                onChange={(e) => setGoalInputValue(parseInt(e.target.value) || 0)}
-                placeholder="e.g. 90"
-                className="w-full p-3.5 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-bold outline-none focus:border-brand-500 transition-colors"
-              />
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-[11px] font-bold text-[var(--text2)] uppercase tracking-wider block mb-1.5 text-center">
+                  Namaz
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={goalInputs.namaz || ''}
+                  onChange={(e) => setGoalInputs(p => ({...p, namaz: parseInt(e.target.value) || 0}))}
+                  placeholder="90"
+                  className="w-full p-3 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-bold text-center outline-none focus:border-brand-500 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-[var(--text2)] uppercase tracking-wider block mb-1.5 text-center">
+                  Zikar
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={goalInputs.zikar || ''}
+                  onChange={(e) => setGoalInputs(p => ({...p, zikar: parseInt(e.target.value) || 0}))}
+                  placeholder="90"
+                  className="w-full p-3 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-bold text-center outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-[var(--text2)] uppercase tracking-wider block mb-1.5 text-center">
+                  Quran
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={goalInputs.quran || ''}
+                  onChange={(e) => setGoalInputs(p => ({...p, quran: parseInt(e.target.value) || 0}))}
+                  placeholder="90"
+                  className="w-full p-3 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-bold text-center outline-none focus:border-purple-500 transition-colors"
+                />
+              </div>
             </div>
             <p className="text-[10px] text-[var(--text3)] leading-relaxed mt-[-4px]">
-              This goal is evaluated against completing all 5 primary prayers throughout the entire month.
+              Set your monthly target completion percentages for each activity (1-100%).
             </p>
             <div className="flex gap-2 mt-2">
               <button
@@ -907,7 +1091,7 @@ export default function App() {
                 value={zkName}
                 onChange={(e) => setZkName(e.target.value)}
                 placeholder="e.g. SubhanAllah"
-                className="w-full p-3.5 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-bold outline-none focus:border-brand-500 transition-colors"
+                className="w-full p-3.5 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-bold outline-none focus:border-blue-500 transition-colors"
               />
             </div>
 
@@ -922,7 +1106,7 @@ export default function App() {
                 onChange={(e) => setZkArabic(e.target.value)}
                 placeholder="e.g. سبحان الله"
                 dir="rtl"
-                className="w-full p-3.5 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-lg font-arabic font-bold outline-none focus:border-brand-500 transition-colors text-right"
+                className="w-full p-3.5 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-lg font-arabic font-bold outline-none focus:border-blue-500 transition-colors text-right"
               />
             </div>
 
@@ -936,7 +1120,7 @@ export default function App() {
                 value={zkTrans}
                 onChange={(e) => setZkTrans(e.target.value)}
                 placeholder="e.g. Glory be to Allah"
-                className="w-full p-3.5 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-medium outline-none focus:border-brand-500 transition-colors"
+                className="w-full p-3.5 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-medium outline-none focus:border-blue-500 transition-colors"
               />
             </div>
 
@@ -952,7 +1136,7 @@ export default function App() {
                   value={zkTarget || ''}
                   onChange={(e) => setZkTarget(parseInt(e.target.value) || 0)}
                   placeholder="33"
-                  className="w-full p-3.5 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-bold outline-none focus:border-brand-500 transition-colors"
+                  className="w-full p-3.5 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-bold outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
               <div>
@@ -966,7 +1150,7 @@ export default function App() {
                   value={zkDaily || ''}
                   onChange={(e) => setZkDaily(parseInt(e.target.value) || 0)}
                   placeholder="3"
-                  className="w-full p-3.5 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-bold outline-none focus:border-brand-500 transition-colors"
+                  className="w-full p-3.5 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-bold outline-none focus:border-blue-500 transition-colors"
                 />
               </div>
             </div>
@@ -1025,10 +1209,22 @@ export default function App() {
           icon={confirmType === 'permanent_delete' ? '⚠️' : confirmType === 'purge_bin' ? '🗑️' : '🔥'}
         />
 
+        {/* AUTHENTICATION & SECURITY MODAL */}
+        <AuthModal
+          isOpen={isAuthModalOpen}
+          onClose={() => setIsAuthModalOpen(false)}
+          currentUser={currentUser}
+          showToast={showToast}
+        />
+
         {/* TOAST SYSTEM POPUP OVERLAY */}
         <div
-          className={`absolute bottom-24 left-1/2 -translate-x-1/2 z-50 py-2.5 px-5 bg-neutral-900 dark:bg-white text-white dark:text-neutral-950 text-xs font-bold rounded-full shadow-lg pointer-events-none transition-all duration-200 ${
+          className={`absolute bottom-24 left-1/2 -translate-x-1/2 z-50 py-2.5 px-5 text-xs font-bold rounded-full shadow-lg pointer-events-none transition-all duration-200 ${
             toast.visible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-4 scale-95'
+          } ${
+            toast.type === 'zikar' || toast.type === 'dua' ? 'bg-blue-600 text-white' :
+            toast.type === 'quran' ? 'bg-purple-600 text-white' :
+            'bg-neutral-900 dark:bg-white text-white dark:text-neutral-950'
           }`}
         >
           {toast.message}

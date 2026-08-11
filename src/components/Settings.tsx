@@ -7,8 +7,9 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Zikar } from '../types';
 import { 
-  Moon, Target, Trash2, ArrowRight, RotateCcw, ChevronDown
+  Moon, Target, Trash2, ArrowRight, RotateCcw, ChevronDown, User, ShieldCheck, LogOut, CheckCircle2
 } from 'lucide-react';
+import { User as FirebaseUser } from 'firebase/auth';
 
 interface SettingsProps {
   dark: boolean;
@@ -19,7 +20,9 @@ interface SettingsProps {
   onRestoreZikar: (idx: number) => void;
   onPermanentDeleteZikar: (idx: number) => void;
   onPurgeRecycleBin: () => void;
-  onClearData: (target: 'namaz' | 'zikar' | 'both') => void;
+  onClearData: (target: 'namaz' | 'zikar' | 'quran' | 'both') => void;
+  currentUser?: FirebaseUser | null;
+  onOpenAuthModal?: () => void;
 }
 
 export default function Settings({
@@ -31,10 +34,12 @@ export default function Settings({
   onRestoreZikar,
   onPermanentDeleteZikar,
   onPurgeRecycleBin,
-  onClearData
+  onClearData,
+  currentUser,
+  onOpenAuthModal
 }: SettingsProps) {
   const [isBinOpen, setIsBinOpen] = useState(false);
-  const [clearTarget, setClearTarget] = useState<'namaz' | 'zikar' | 'both'>('namaz');
+  const [clearTarget, setClearTarget] = useState<'namaz' | 'zikar' | 'quran' | 'both'>('namaz');
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in pb-10">
@@ -42,6 +47,59 @@ export default function Settings({
       <div className="flex items-center justify-between">
         <div className="text-xs font-bold text-[var(--text)] uppercase tracking-widest">
           Settings
+        </div>
+      </div>
+
+      {/* Account & Security Section */}
+      <div className="flex flex-col gap-2">
+        <h4 className="text-[10px] font-black text-[var(--text3)] uppercase tracking-wider px-1">
+          Account & Cloud Sync
+        </h4>
+        <div className="p-4 bg-[var(--surface2)] border border-[var(--border)] rounded-2xl flex flex-col gap-3">
+          {currentUser ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-500 to-emerald-400 text-white font-bold text-base flex items-center justify-center">
+                  {currentUser.displayName ? currentUser.displayName[0].toUpperCase() : 'U'}
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <div className="text-xs font-bold text-[var(--text)] truncate">
+                    {currentUser.displayName || 'Believer'}
+                  </div>
+                  <div className="text-[10px] font-medium text-[var(--text3)] truncate">
+                    {currentUser.email}
+                  </div>
+                  <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                    <CheckCircle2 className="w-3 h-3" /> Firestore Protected
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={onOpenAuthModal}
+                className="px-3 py-1.5 rounded-xl bg-brand-500/10 hover:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-bold transition-all"
+              >
+                Manage
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-[var(--text)]">Cloud Backup & Account</div>
+                  <div className="text-[10px] font-medium text-[var(--text3)]">Create an account to sync files & data</div>
+                </div>
+              </div>
+              <button
+                onClick={onOpenAuthModal}
+                className="px-3.5 py-1.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-extrabold shadow-sm transition-all active:scale-95"
+              >
+                Sign In
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -220,12 +278,13 @@ export default function Settings({
           <div className="flex gap-2 flex-col xs:flex-row">
             <select
               value={clearTarget}
-              onChange={(e) => setClearTarget(e.target.value as 'namaz' | 'zikar' | 'both')}
+              onChange={(e) => setClearTarget(e.target.value as 'namaz' | 'zikar' | 'quran' | 'both')}
               className="flex-1 py-3 px-4 rounded-xl border-2 border-[var(--border)] bg-[var(--surface)] text-[var(--text)] text-xs font-bold outline-none cursor-pointer focus:border-red-500"
             >
-              <option value="namaz">🕌 Namaz records only</option>
-              <option value="zikar">📿 Zikar records only</option>
-              <option value="both">⚠️ Full Hard Reset (All data)</option>
+              <option value="namaz">Namaz records only</option>
+              <option value="zikar">Zikar records only</option>
+              <option value="quran">Quran records only</option>
+              <option value="both">Full Hard Reset (All data)</option>
             </select>
             <button
               onClick={() => onClearData(clearTarget)}

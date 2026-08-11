@@ -318,7 +318,7 @@ export default function NamazTracker({
             <div className="text-[9px] font-bold text-[var(--text3)] mt-0.5 flex items-center gap-1">
               <span>Current: {weeklyCompletionPct}%</span>
               <span>·</span>
-              <span>🕌 {weeklyCompletionPct > 0 ? 'In progress' : 'Start tracking'}</span>
+              <span> {weeklyCompletionPct > 0 ? 'In progress' : 'Start tracking'}</span>
             </div>
           </div>
         </div>

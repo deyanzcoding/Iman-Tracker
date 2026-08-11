@@ -21,7 +21,9 @@ const RECOMMENDATIONS = [
   { name: 'Astaghfirullah', arabic: 'أَسْتَغْفِرُ اللَّه', translation: 'I seek forgiveness from Allah', target: 100, daily: 1 },
   { name: 'Darood Shareef', arabic: 'صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ', translation: 'Blessings upon Prophet Muhammad', target: 11, daily: 3 },
   { name: 'SubhanAllahi wa Bihamdihi', arabic: 'سُبْحَانَ اللَّهِ وَبِحَمْدِهِ', translation: 'Glory be to Allah and Praise', target: 33, daily: 3 },
-  { name: 'La Ilaha Illallah', arabic: 'لَا إِلٰهَ إِلَّا اللّٰه', translation: 'There is no god but Allah', target: 100, daily: 1 }
+  { name: 'La Ilaha Illallah', arabic: 'لَا إِلٰهَ إِلَّا اللّٰه', translation: 'There is no god but Allah', target: 100, daily: 1 },
+  { name: 'Dua of Yunus', arabic: 'لَا إِلَٰهَ إِلَّا أَنتَ سُبْحَانَكَ إِنِّي كُنتُ مِنَ الظَّالِمِينَ', translation: 'There is no deity except You; exalted are You. Indeed, I have been of the wrongdoers.', target: 33, daily: 1 },
+  { name: 'Dua of Musa', arabic: 'رَبِّ إِنِّي لِمَا أَنْزَلْتَ إِلَيَّ مِنْ خَيْرٍ فَقِيرٌ', translation: 'My Lord, indeed I am, for whatever good You would send down to me, in need.', target: 7, daily: 1 }
 ];
 
 export default function ZikarCounter({
@@ -67,7 +69,7 @@ export default function ZikarCounter({
       <div className="flex items-center justify-between mb-1">
         <div className="text-xs font-bold text-[var(--text)] uppercase tracking-widest flex items-center gap-1.5">
           Zikar Counter
-          <span className="font-arabic text-brand-500 text-lg font-normal ml-1">ذِكْر</span>
+          <span className="font-arabic text-blue-500 text-lg font-normal ml-1">ذِكْر</span>
         </div>
       </div>
 
@@ -106,7 +108,7 @@ export default function ZikarCounter({
               <div
                 key={d.id}
                 className={`rounded-3xl border p-5 shadow-sm flex flex-col gap-4 transition-all bg-[var(--surface)] ${
-                  allDone ? 'border-brand-500 bg-brand-50/20 dark:bg-brand-950/20' : 'border-[var(--border)]'
+                  allDone ? 'border-blue-500 bg-blue-50/20 dark:bg-blue-950/20' : 'border-[var(--border)]'
                 }`}
               >
                 {/* Zikar Header Info */}
@@ -114,7 +116,7 @@ export default function ZikarCounter({
                   <span
                     className={`text-[10px] font-bold px-2.5 py-1 rounded-full border transition-colors ${
                       allDone
-                        ? 'bg-brand-500/10 border-brand-500/20 text-brand-600'
+                        ? 'bg-blue-500/10 border-blue-500/20 text-blue-600'
                         : 'bg-[var(--surface2)] border-[var(--border)] text-[var(--text2)]'
                     }`}
                   >
@@ -124,7 +126,7 @@ export default function ZikarCounter({
                   <div className="flex gap-1">
                     <button
                       onClick={() => onEditDuaClick(idx)}
-                      className="w-8 h-8 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--text2)] hover:text-brand-500 flex items-center justify-center transition-all active:scale-90"
+                      className="w-8 h-8 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--text2)] hover:text-blue-500 flex items-center justify-center transition-all active:scale-90"
                       title="Edit parameters"
                     >
                       <Edit2 className="w-3.5 h-3.5 stroke-[2.2]" />
@@ -140,17 +142,17 @@ export default function ZikarCounter({
                 </div>
 
                 {/* Zikar Arabic Text & Translation */}
-                <div className="text-center py-2">
-                  <div className="font-arabic text-3xl font-bold leading-normal text-brand-700 dark:text-brand-400 mb-1" dir="rtl">
+                <div className="text-center py-2 flex-1 flex flex-col justify-center">
+                  <div className="font-arabic text-xl sm:text-2xl font-bold leading-relaxed text-blue-700 dark:text-blue-400 mb-2 break-words whitespace-normal" dir="rtl">
                     {d.arabic || d.name}
                   </div>
                   {d.translation && (
-                    <div className="text-xs text-[var(--text2)] font-medium italic mt-1 leading-relaxed px-4">
+                    <div className="text-[11px] text-[var(--text2)] font-medium italic mt-1 leading-relaxed px-1 break-words whitespace-normal">
                       "{d.translation}"
                     </div>
                   )}
                   {!d.arabic && (
-                    <div className="text-sm font-bold text-[var(--text)] mt-1">{d.name}</div>
+                    <div className="text-sm font-bold text-[var(--text)] mt-1 break-words">{d.name}</div>
                   )}
                 </div>
 
@@ -189,7 +191,7 @@ export default function ZikarCounter({
                     className={`flex-[2] py-3 px-4 rounded-xl text-xs font-extrabold text-white shadow-sm flex items-center justify-center transition-all ${
                       allDone
                         ? 'bg-[var(--border2)] text-[var(--text3)] cursor-not-allowed opacity-60'
-                        : 'bg-brand-500 hover:bg-brand-600 active:scale-95 cursor-pointer shadow-sm'
+                        : 'bg-blue-500 hover:bg-blue-600 active:scale-95 cursor-pointer shadow-sm'
                     }`}
                   >
                     + Count
@@ -203,8 +205,8 @@ export default function ZikarCounter({
 
       {/* Recommended Items Section */}
       <div className="mt-4 p-4 rounded-2xl bg-[var(--surface2)] border border-[var(--border)]">
-        <div className="text-brand-700 dark:text-brand-400 text-xs font-black flex items-center gap-1.5 mb-1">
-          <Sparkles className="w-4 h-4 text-brand-500" />
+        <div className="text-blue-700 dark:text-blue-400 text-xs font-black flex items-center gap-1.5 mb-1">
+          <Sparkles className="w-4 h-4 text-blue-500" />
           Recommended Masnoon Zikar
         </div>
         <p className="text-[10px] text-[var(--text3)] font-semibold mb-4">
@@ -220,25 +222,25 @@ export default function ZikarCounter({
             filteredRecs.map((r) => (
               <div
                 key={r.name}
-                className="p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex items-center justify-between gap-4 shadow-sm"
+                className="p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)] flex flex-col gap-3 shadow-sm"
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="font-extrabold text-xs text-[var(--text)]">{r.name}</span>
-                    <span className="font-arabic text-sm text-brand-500 font-bold leading-none" dir="rtl">
+                    <span className="font-arabic text-sm text-blue-500 font-bold leading-normal break-words whitespace-normal" dir="rtl">
                       {r.arabic}
                     </span>
                   </div>
-                  <div className="text-[10px] text-[var(--text2)] font-medium leading-normal mt-0.5 max-w-[200px] truncate">
+                  <div className="text-[10px] text-[var(--text2)] font-medium leading-normal mt-1 break-words whitespace-normal">
                     {r.translation}
                   </div>
-                  <div className="text-[9px] text-brand-600 font-bold mt-1 uppercase tracking-wider">
+                  <div className="text-[9px] text-blue-600 font-bold mt-1 uppercase tracking-wider">
                     Target: {r.target} × {r.daily}/day
                   </div>
                 </div>
                 <button
                   onClick={() => onAddRecommendation(r)}
-                  className="py-1.5 px-3 rounded-lg text-[10px] font-black bg-brand-50 text-brand-600 border border-brand-500/10 hover:bg-brand-500 hover:text-white transition-all active:scale-95"
+                  className="py-1.5 px-3 rounded-lg text-[10px] font-black bg-blue-50 text-blue-600 border border-blue-500/10 hover:bg-blue-500 hover:text-white transition-all active:scale-95 self-end"
                 >
                   + Add
                 </button>
