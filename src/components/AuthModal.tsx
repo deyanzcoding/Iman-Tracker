@@ -17,7 +17,12 @@ import {
   CheckCircle2,
   Upload,
   UserPlus,
-  LogIn
+  LogIn,
+  Camera,
+  Edit3,
+  AlertTriangle,
+  Sparkles,
+  Check
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { 
@@ -28,6 +33,8 @@ import {
   getUserFilesMetadata, 
   deleteUserFileMetadata, 
   saveUserFileMetadata,
+  updateUserProfileDetails,
+  deleteUserAccount,
   FileMetadataRecord 
 } from '../utils/firebase';
 
@@ -38,6 +45,14 @@ interface AuthModalProps {
   showToast: (msg: string) => void;
 }
 
+const AVATAR_PRESETS = [
+  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=150&auto=format&fit=crop&q=80'
+];
+
 export default function AuthModal({ isOpen, onClose, currentUser, showToast }: AuthModalProps) {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
@@ -47,16 +62,30 @@ export default function AuthModal({ isOpen, onClose, currentUser, showToast }: A
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Profile Edit State
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editPhotoUrl, setEditPhotoUrl] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  // Delete Account Confirmation Modal state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
   // User Files metadata loaded from Firestore
   const [userFiles, setUserFiles] = useState<FileMetadataRecord[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
 
-  // Load user files when logged in
+  // Load user files & init profile fields when logged in
   useEffect(() => {
     if (currentUser) {
       loadFiles();
+      setEditName(currentUser.displayName || '');
+      setEditPhotoUrl(currentUser.photoURL || '');
     } else {
       setUserFiles([]);
+      setIsEditingProfile(false);
+      setShowDeleteConfirm(false);
     }
   }, [currentUser]);
 
@@ -70,6 +99,37 @@ export default function AuthModal({ isOpen, onClose, currentUser, showToast }: A
       console.error(err);
     } finally {
       setLoadingFiles(false);
+    }
+  };
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    setSavingProfile(true);
+    try {
+      await updateUserProfileDetails(editName, editPhotoUrl);
+      showToast('Profile & picture updated successfully!');
+      setIsEditingProfile(false);
+    } catch (err: any) {
+      console.error(err);
+      showToast('Failed to update profile details');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeletingAccount(true);
+    try {
+      await deleteUserAccount();
+      showToast('Your account and saved data have been permanently deleted.');
+      setShowDeleteConfirm(false);
+      onClose();
+    } catch (err: any) {
+      console.error(err);
+      showToast('Failed to delete account. Please re-authenticate and try again.');
+    } finally {
+      setDeletingAccount(false);
     }
   };
 
@@ -199,37 +259,133 @@ export default function AuthModal({ isOpen, onClose, currentUser, showToast }: A
           <div className="overflow-y-auto flex-1 no-scrollbar pt-4 flex flex-col gap-5">
             {currentUser ? (
               /* LOGGED IN ACCOUNT VIEW */
-              <div className="flex flex-col gap-5">
-                {/* User Info Card */}
+              <div className="flex flex-col gap-4">
+                {/* User Info Card with Profile Picture */}
                 <div className="bg-[var(--surface2)] border border-[var(--border2)] rounded-2xl p-4 flex flex-col gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-brand-500 to-emerald-400 text-white font-black text-lg flex items-center justify-center shadow-md">
-                      {currentUser.displayName ? currentUser.displayName[0].toUpperCase() : currentUser.email ? currentUser.email[0].toUpperCase() : 'U'}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="relative flex-shrink-0">
+                        {currentUser.photoURL ? (
+                          <img 
+                            src={currentUser.photoURL} 
+                            alt="Profile Avatar" 
+                            className="w-14 h-14 rounded-2xl object-cover border-2 border-brand-500/30 shadow-md"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-brand-500 to-emerald-400 text-white font-black text-xl flex items-center justify-center shadow-md">
+                            {currentUser.displayName ? currentUser.displayName[0].toUpperCase() : currentUser.email ? currentUser.email[0].toUpperCase() : 'U'}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <div className="text-sm font-extrabold text-[var(--text)] truncate">
+                          {currentUser.displayName || 'Believer'}
+                        </div>
+                        <div className="text-xs font-medium text-[var(--text2)] truncate">
+                          {currentUser.email}
+                        </div>
+                        <div className="flex items-center gap-1 mt-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full w-fit">
+                          <CheckCircle2 className="w-3 h-3" /> All Data Synced & Saved
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex flex-col min-w-0">
-                      <div className="text-sm font-extrabold text-[var(--text)] truncate">
-                        {currentUser.displayName || 'Believer'}
-                      </div>
-                      <div className="text-xs font-medium text-[var(--text2)] truncate">
-                        {currentUser.email}
-                      </div>
-                      <div className="flex items-center gap-1 mt-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full w-fit">
-                        <CheckCircle2 className="w-3 h-3" /> Protected & Synced
-                      </div>
-                    </div>
+                    <button
+                      onClick={() => setIsEditingProfile(!isEditingProfile)}
+                      className="p-2 rounded-xl bg-brand-500/10 hover:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-bold transition-all flex items-center gap-1 flex-shrink-0"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>{isEditingProfile ? 'Cancel' : 'Edit Profile'}</span>
+                    </button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[var(--border2)] text-[10px] text-[var(--text3)]">
-                    <div>
-                      <span className="font-semibold block">Account ID (UID):</span>
-                      <span className="font-mono truncate block text-[9px] text-[var(--text2)]">{currentUser.uid.substring(0, 14)}...</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold block">Creation Date:</span>
-                      <span className="text-[10px] text-[var(--text2)] font-medium">
-                        {currentUser.metadata.creationTime ? new Date(currentUser.metadata.creationTime).toLocaleDateString() : 'Today'}
-                      </span>
-                    </div>
+                  {/* Profile Edit Drawer */}
+                  {isEditingProfile && (
+                    <motion.form 
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      onSubmit={handleUpdateProfile}
+                      className="pt-3 border-t border-[var(--border2)] flex flex-col gap-3"
+                    >
+                      <div className="text-xs font-bold text-[var(--text)] flex items-center gap-1.5">
+                        <Camera className="w-4 h-4 text-brand-500" />
+                        <span>Update Display Name & Profile Picture</span>
+                      </div>
+
+                      {/* Display Name Input */}
+                      <div>
+                        <label className="text-[10px] font-bold text-[var(--text3)] uppercase block mb-1">Display Name</label>
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          placeholder="Your Name"
+                          className="w-full py-2 px-3 text-xs bg-[var(--surface)] border border-[var(--border2)] rounded-xl outline-none focus:border-brand-500 font-medium"
+                        />
+                      </div>
+
+                      {/* Photo URL Input */}
+                      <div>
+                        <label className="text-[10px] font-bold text-[var(--text3)] uppercase block mb-1">Profile Picture Image URL</label>
+                        <input
+                          type="url"
+                          value={editPhotoUrl}
+                          onChange={(e) => setEditPhotoUrl(e.target.value)}
+                          placeholder="https://example.com/photo.jpg"
+                          className="w-full py-2 px-3 text-xs bg-[var(--surface)] border border-[var(--border2)] rounded-xl outline-none focus:border-brand-500 font-medium"
+                        />
+                      </div>
+
+                      {/* Preset Avatars Selection */}
+                      <div>
+                        <label className="text-[10px] font-bold text-[var(--text3)] uppercase block mb-1.5">Or Select an Avatar Preset</label>
+                        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                          {AVATAR_PRESETS.map((preset, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => setEditPhotoUrl(preset)}
+                              className={`relative w-10 h-10 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-transform ${
+                                editPhotoUrl === preset ? 'border-brand-500 scale-105 shadow-sm' : 'border-transparent opacity-70 hover:opacity-100'
+                              }`}
+                            >
+                              <img src={preset} alt={`Preset ${idx + 1}`} className="w-full h-full object-cover" />
+                              {editPhotoUrl === preset && (
+                                <div className="absolute inset-0 bg-brand-500/30 flex items-center justify-center text-white">
+                                  <Check className="w-4 h-4 stroke-[3]" />
+                                </div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Submit Edit Button */}
+                      <button
+                        type="submit"
+                        disabled={savingProfile}
+                        className="w-full py-2.5 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5 active:scale-95 mt-1"
+                      >
+                        {savingProfile ? 'Saving...' : 'Save Profile Changes'}
+                      </button>
+                    </motion.form>
+                  )}
+
+                  <div className="flex items-center justify-between pt-2 border-t border-[var(--border2)] text-[10px] text-[var(--text3)]">
+                    <span className="font-semibold">Creation Date:</span>
+                    <span className="text-[10px] text-[var(--text2)] font-medium">
+                      {currentUser.metadata.creationTime ? new Date(currentUser.metadata.creationTime).toLocaleDateString() : 'Today'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Data Protection Banner */}
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-start gap-2.5">
+                  <CloudCheck className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <div className="text-[11px] text-[var(--text2)] leading-relaxed">
+                    <span className="font-extrabold text-[var(--text)] block">Automatic Cloud Synchronization</span>
+                    Your Namaz records, Zikar counters, Quran reading history, and custom targets are permanently saved under your account in cloud storage.
                   </div>
                 </div>
 
@@ -253,9 +409,9 @@ export default function AuthModal({ isOpen, onClose, currentUser, showToast }: A
                       <span className="text-[10px] opacity-75">Upload Para PDFs in the Quran tab to track file metadata.</span>
                     </div>
                   ) : (
-                    <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-1">
+                    <div className="flex flex-col gap-2 max-h-36 overflow-y-auto pr-1">
                       {userFiles.map((f) => (
-                        <div key={f.id} className="p-3 bg-[var(--surface2)] border border-[var(--border2)] rounded-xl flex items-center justify-between gap-3">
+                        <div key={f.id} className="p-2.5 bg-[var(--surface2)] border border-[var(--border2)] rounded-xl flex items-center justify-between gap-3">
                           <div className="flex flex-col min-w-0">
                             <span className="text-xs font-bold text-[var(--text)] truncate">{f.fileName}</span>
                             <div className="flex items-center gap-2 text-[10px] text-[var(--text3)] mt-0.5">
@@ -277,13 +433,50 @@ export default function AuthModal({ isOpen, onClose, currentUser, showToast }: A
                   )}
                 </div>
 
-                {/* Logout Action */}
-                <button
-                  onClick={handleLogout}
-                  className="w-full py-3 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 font-bold text-xs rounded-2xl transition-colors flex items-center justify-center gap-2 mt-2"
-                >
-                  <LogOut className="w-4 h-4" /> Sign Out
-                </button>
+                {/* Account Actions: Sign Out & Delete Account */}
+                <div className="flex items-center gap-2 pt-2 border-t border-[var(--border2)]">
+                  <button
+                    onClick={handleLogout}
+                    className="flex-1 py-2.5 bg-gray-500/10 hover:bg-gray-500/20 text-[var(--text)] font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <LogOut className="w-4 h-4" /> Sign Out
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="py-2.5 px-3 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                    title="Delete Account"
+                  >
+                    <Trash2 className="w-4 h-4" /> Delete Account
+                  </button>
+                </div>
+
+                {/* Delete Account Confirmation Modal */}
+                {showDeleteConfirm && (
+                  <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-2xl flex flex-col gap-3 mt-1">
+                    <div className="flex items-center gap-2 text-xs font-extrabold text-red-600 dark:text-red-400">
+                      <AlertTriangle className="w-4 h-4" />
+                      <span>Permanently Delete Account?</span>
+                    </div>
+                    <p className="text-[11px] text-[var(--text2)] leading-tight">
+                      This will delete your account login and clear all your cloud data (Namaz logs, Zikar count, Quran history). This operation cannot be undone.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleDeleteAccount}
+                        disabled={deletingAccount}
+                        className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all"
+                      >
+                        {deletingAccount ? 'Deleting...' : 'Yes, Delete My Account'}
+                      </button>
+                      <button
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="px-3 py-2 bg-[var(--surface2)] text-[var(--text)] font-bold text-xs rounded-xl"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               /* AUTH FORM (SIGN IN / SIGN UP) */

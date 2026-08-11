@@ -15,7 +15,7 @@ import Settings from './components/Settings';
 import BottomSheet from './components/BottomSheet';
 import ConfirmDialog from './components/ConfirmDialog';
 import AuthModal from './components/AuthModal';
-import { Home, BookOpen, Book, BarChart2, BarChart3, Activity, Settings as SettingsIcon, User as UserIcon, ShieldCheck } from 'lucide-react';
+import { Home, BookOpen, Book, BarChart2, BarChart3, Activity, Settings as SettingsIcon, User as UserIcon, ShieldCheck, CheckCircle2, Edit3 } from 'lucide-react';
 import appLogo from './assets/images/favicon_1784528732122.jpg';
 import { User } from 'firebase/auth';
 import { subscribeToAuthChanges, getUserAppData, saveUserAppData } from './utils/firebase';
@@ -784,120 +784,214 @@ export default function App() {
           className="flex-1 overflow-y-auto no-scrollbar flex flex-col pb-24"
         >
           {/* APP HEADER */}
-          <div className={`relative overflow-hidden flex-shrink-0 bg-gradient-to-br p-3 pb-4 text-white mb-2 ${
-            activeTab === 'dua' ? 'from-blue-600 to-blue-400' : 
-            activeTab === 'quran' ? 'from-purple-600 to-purple-400' : 
-            'from-[#12956a] to-[#1dbf87]'
-          }`}>
-            {/* Subtle Decorative Circular Shapes */}
-            <div className="absolute -right-10 -top-10 w-44 h-44 bg-white/10 rounded-full blur-xl pointer-events-none" />
-            <div className="absolute -left-10 -bottom-10 w-36 h-36 bg-black/10 rounded-full blur-xl pointer-events-none" />
+          {activeTab === 'settings' ? (
+            /* SPECIAL USER IDENTITY CARD HEADER FOR SETTINGS TAB */
+            <div className="relative overflow-hidden flex-shrink-0 bg-gradient-to-br from-slate-800 via-emerald-950 to-slate-900 p-5 text-white mb-3 rounded-b-3xl shadow-xl">
+              {/* Decorative Glows */}
+              <div className="absolute -right-10 -top-10 w-48 h-48 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-slate-500/20 rounded-full blur-xl pointer-events-none" />
 
-            {/* Brand header bar */}
-            <div className="flex items-start justify-between relative z-10">
-              <div className="flex items-center gap-2.5">
-                <div>
-                  <h1 className="font-sans font-extrabold text-[22px] tracking-wide leading-none text-white">Iman Tracker</h1>
-                  <div className="text-[9px] uppercase font-bold tracking-widest text-white/80 mt-1">ISLAMIC PRAYER JOURNAL</div>
+              {/* Card Title Bar */}
+              <div className="flex items-center justify-between relative z-10 mb-4 pb-2.5 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                  <span className="text-xs font-black uppercase tracking-widest text-white/90">User Account Identity Card</span>
                 </div>
-              </div>
-
-              {/* Right side controls: Account Pill + Streak Badge */}
-              <div className="flex items-center gap-2">
                 <button
                   onClick={() => setIsAuthModalOpen(true)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white transition-all active:scale-95 text-[11px] font-bold shadow-sm"
-                  title={currentUser ? `Logged in as ${currentUser.email}` : "Sign In or Create Account"}
+                  className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-[11px] font-extrabold text-white flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
+                  title="Edit Profile"
                 >
-                  {currentUser ? (
-                    <>
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="max-w-[70px] truncate">{currentUser.displayName || currentUser.email?.split('@')[0] || 'User'}</span>
-                    </>
+                  <Edit3 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Edit Profile</span>
+                </button>
+              </div>
+
+              {/* Centered Identity Body */}
+              <div className="flex flex-col items-center text-center relative z-10 py-1">
+                <button 
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="relative mb-3 group active:scale-95 transition-transform"
+                  title="Click to edit profile"
+                >
+                  {currentUser?.photoURL ? (
+                    <img 
+                      src={currentUser.photoURL} 
+                      alt="Profile Avatar" 
+                      className="w-20 h-20 rounded-full object-cover border-4 border-white/90 shadow-2xl group-hover:scale-105 transition-transform"
+                      referrerPolicy="no-referrer"
+                    />
                   ) : (
-                    <>
-                      <UserIcon className="w-3.5 h-3.5" />
-                      <span>Sign In</span>
-                    </>
+                    <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-brand-500 via-emerald-500 to-teal-400 text-white font-black text-3xl flex items-center justify-center border-4 border-white/90 shadow-2xl group-hover:scale-105 transition-transform">
+                      {currentUser?.displayName ? currentUser.displayName[0].toUpperCase() : currentUser?.email ? currentUser.email[0].toUpperCase() : 'U'}
+                    </div>
                   )}
                 </button>
 
-                {/* Streak Tracker Badge - Glassmorphism Card */}
-                <div className="rounded-2xl py-1.5 px-3 text-center bg-white/10 backdrop-blur-md border border-white/20 text-white shadow-sm min-w-[65px]">
-                  <div className="text-xl font-black leading-none">{streakCount}</div>
-                  <div className="text-[8px] font-extrabold uppercase mt-1 tracking-wider text-white/90">Streak</div>
-                </div>
-              </div>
-            </div>
+                <h2 className="text-xl font-extrabold text-white tracking-wide">
+                  {currentUser?.displayName || 'Believer'}
+                </h2>
 
-            {/* Quick Header Stats Cards - Beautiful Glassmorphism Cards */}
-            <div className="grid grid-cols-3 gap-2 mt-3 relative z-10">
-              {activeTab === 'dua' ? (
-                <>
-                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
-                    <div className="text-lg font-black leading-none text-white">{zikarMetrics.completed}</div>
-                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Done</div>
-                  </div>
-                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
-                    <div className="text-lg font-black leading-none text-white">{zikarMetrics.remaining}</div>
-                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Left</div>
-                  </div>
-                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
-                    <div className="text-lg font-black leading-none text-white">{zikarMetrics.totalDua}</div>
-                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Zikars</div>
-                  </div>
-                </>
-              ) : activeTab === 'quran' ? (
-                <>
-                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
-                    <div className="text-lg font-black leading-none text-white">{quranMetrics.todayMins}<span className="text-[10px] ml-0.5">m</span></div>
-                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Today</div>
-                  </div>
-                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
-                    <div className="text-lg font-black leading-none text-white">{quranMetrics.weekMins}<span className="text-[10px] ml-0.5">m</span></div>
-                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">This Week</div>
-                  </div>
-                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
-                    <div className="text-lg font-black leading-none text-white">{quranMetrics.totalMins}<span className="text-[10px] ml-0.5">m</span></div>
-                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Total</div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
-                    <div className="text-lg font-black leading-none text-white">{weeklyCompletionMetrics.prayedCount}</div>
-                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Prayed</div>
-                  </div>
-                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
-                    <div className="text-lg font-black leading-none text-white">{weeklyCompletionMetrics.missedCount}</div>
-                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Missed</div>
-                  </div>
-                  <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
-                    <div className="text-lg font-black leading-none text-white">{state.bestStreak}</div>
-                    <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Best</div>
-                  </div>
-                </>
-              )}
-            </div>
+                <p className="text-xs font-medium text-white/75 mt-0.5 max-w-[260px] truncate">
+                  {currentUser?.email || 'Guest Profile (Local Storage)'}
+                </p>
 
-            {/* Weekly progress Bar */}
-            <div className="mt-3 relative z-10">
-              <div className="text-[10px] font-bold text-white/85 uppercase tracking-wider mb-1.5">
-                {activeTab === 'dua' ? 'Daily Zikar Progress' : activeTab === 'quran' ? 'Daily Reading Goal (15m)' : 'Weekly Completion'}
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-1.5 rounded-full bg-white/25 overflow-hidden">
-                  <div
-                    className="h-full bg-white rounded-full transition-all duration-500 ease-out"
-                    style={{ width: `${activeTab === 'dua' ? zikarMetrics.percentage : activeTab === 'quran' ? quranMetrics.percentage : weeklyCompletionMetrics.percentage}%` }}
-                  />
-                </div>
-                <div className="text-xs font-black text-white min-w-[32px] text-right">
-                  {activeTab === 'dua' ? zikarMetrics.percentage : activeTab === 'quran' ? quranMetrics.percentage : weeklyCompletionMetrics.percentage}%
+                <div className="mt-3 flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-400/30 px-3 py-1 rounded-full text-emerald-300 shadow-sm">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-[11px] font-bold">
+                    {currentUser ? 'All Data Synced & Saved' : 'Local Storage Mode'}
+                  </span>
                 </div>
               </div>
             </div>
-          </div>
+          ) : (
+            /* STANDARD APP HEADER FOR NAMAZ, ZIKAR, QURAN, PROGRESS TABS */
+            <div className={`relative overflow-hidden flex-shrink-0 bg-gradient-to-br p-3 pb-4 text-white mb-2 ${
+              activeTab === 'dua' ? 'from-blue-600 to-blue-400' : 
+              activeTab === 'quran' ? 'from-purple-600 to-purple-400' : 
+              activeTab === 'progress' ? 'from-teal-700 to-emerald-800' :
+              'from-[#12956a] to-[#1dbf87]'
+            }`}>
+              {/* Subtle Decorative Circular Shapes */}
+              <div className="absolute -right-10 -top-10 w-44 h-44 bg-white/10 rounded-full blur-xl pointer-events-none" />
+              <div className="absolute -left-10 -bottom-10 w-36 h-36 bg-black/10 rounded-full blur-xl pointer-events-none" />
+
+              {/* Brand header bar */}
+              <div className="flex items-center justify-between relative z-10 pt-1">
+                {/* Left Side: Circular Profile Picture + Name & Title */}
+                <button
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="flex items-center gap-3 text-left group transition-all active:scale-95"
+                  title={currentUser ? `Logged in as ${currentUser.displayName || currentUser.email}` : "Click to Sign In / Manage Account"}
+                >
+                  <div className="relative flex-shrink-0">
+                    {currentUser?.photoURL ? (
+                      <img 
+                        src={currentUser.photoURL} 
+                        alt="User Avatar" 
+                        className="w-[52px] h-[52px] rounded-full object-cover border-2 border-white/90 shadow-md group-hover:scale-105 transition-transform"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-[52px] h-[52px] rounded-full bg-gradient-to-tr from-white/30 to-white/10 backdrop-blur-md border-2 border-white/90 text-white font-black text-xl flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                        {currentUser?.displayName ? currentUser.displayName[0].toUpperCase() : currentUser?.email ? currentUser.email[0].toUpperCase() : 'U'}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-extrabold text-white tracking-wide truncate max-w-[130px]">
+                        {currentUser?.displayName || (currentUser?.email ? currentUser.email.split('@')[0] : 'Guest Believer')}
+                      </span>
+                    </div>
+                    <h1 className="font-sans font-black text-2xl tracking-tight leading-none text-white mt-0.5">
+                      Iman Tracker
+                    </h1>
+                    <div className="text-[8px] uppercase font-extrabold tracking-[0.18em] text-white/85 mt-1">
+                      ISLAMIC PRAYER JOURNAL
+                    </div>
+                  </div>
+                </button>
+
+                {/* Right Side: Streak Card Pill */}
+                <div className="flex items-center gap-2">
+                  <div className="bg-white/15 backdrop-blur-md border border-white/25 rounded-2xl py-2 px-3.5 text-white flex items-center gap-2.5 shadow-sm">
+                    <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center text-lg shadow-inner">
+                      🔥
+                    </div>
+                    <div className="flex flex-col text-left">
+                      <span className="text-sm font-black leading-none">{streakCount} Day</span>
+                      <span className="text-[8px] font-extrabold uppercase tracking-wider text-white/90 mt-1">Streak</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Header Stats Cards - Beautiful Glassmorphism Cards */}
+              <div className="grid grid-cols-3 gap-2 mt-3 relative z-10">
+                {activeTab === 'dua' ? (
+                  <>
+                    <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                      <div className="text-lg font-black leading-none text-white">{zikarMetrics.completed}</div>
+                      <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Done</div>
+                    </div>
+                    <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                      <div className="text-lg font-black leading-none text-white">{zikarMetrics.remaining}</div>
+                      <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Left</div>
+                    </div>
+                    <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                      <div className="text-lg font-black leading-none text-white">{zikarMetrics.totalDua}</div>
+                      <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Zikars</div>
+                    </div>
+                  </>
+                ) : activeTab === 'quran' ? (
+                  <>
+                    <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                      <div className="text-lg font-black leading-none text-white">{quranMetrics.todayMins}<span className="text-[10px] ml-0.5">m</span></div>
+                      <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Today</div>
+                    </div>
+                    <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                      <div className="text-lg font-black leading-none text-white">{quranMetrics.weekMins}<span className="text-[10px] ml-0.5">m</span></div>
+                      <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">This Week</div>
+                    </div>
+                    <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                      <div className="text-lg font-black leading-none text-white">{quranMetrics.totalMins}<span className="text-[10px] ml-0.5">m</span></div>
+                      <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Total</div>
+                    </div>
+                  </>
+                ) : activeTab === 'progress' ? (
+                  <>
+                    <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                      <div className="text-lg font-black leading-none text-white">{weeklyCompletionMetrics.percentage}%</div>
+                      <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Namaz %</div>
+                    </div>
+                    <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                      <div className="text-lg font-black leading-none text-white">{zikarMetrics.completed}</div>
+                      <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Zikars</div>
+                    </div>
+                    <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                      <div className="text-lg font-black leading-none text-white">{quranMetrics.totalMins}<span className="text-[10px] ml-0.5">m</span></div>
+                      <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Quran</div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                      <div className="text-lg font-black leading-none text-white">{weeklyCompletionMetrics.prayedCount}</div>
+                      <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Prayed</div>
+                    </div>
+                    <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                      <div className="text-lg font-black leading-none text-white">{weeklyCompletionMetrics.missedCount}</div>
+                      <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Missed</div>
+                    </div>
+                    <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-[14px] py-2 px-2 text-center">
+                      <div className="text-lg font-black leading-none text-white">{state.bestStreak}</div>
+                      <div className="text-[8px] font-bold text-white/90 mt-1 tracking-wider uppercase">Best</div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Weekly progress Bar */}
+              <div className="mt-3 relative z-10">
+                <div className="text-[10px] font-bold text-white/85 uppercase tracking-wider mb-1.5">
+                  {activeTab === 'dua' ? 'Daily Zikar Progress' : activeTab === 'quran' ? 'Daily Reading Goal (15m)' : activeTab === 'progress' ? 'Spiritual Progress Overview' : 'Weekly Completion'}
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-1.5 rounded-full bg-white/25 overflow-hidden">
+                    <div
+                      className="h-full bg-white rounded-full transition-all duration-500 ease-out"
+                      style={{ width: `${activeTab === 'dua' ? zikarMetrics.percentage : activeTab === 'quran' ? quranMetrics.percentage : weeklyCompletionMetrics.percentage}%` }}
+                    />
+                  </div>
+                  <div className="text-xs font-black text-white min-w-[32px] text-right">
+                    {activeTab === 'dua' ? zikarMetrics.percentage : activeTab === 'quran' ? quranMetrics.percentage : weeklyCompletionMetrics.percentage}%
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* PAGE CONTENT WINDOW */}
           <div className="px-4">
@@ -946,13 +1040,14 @@ export default function App() {
               onClearData={handleRequestClearData}
               currentUser={currentUser}
               onOpenAuthModal={() => setIsAuthModalOpen(true)}
+              showToast={showToast}
             />
           )}
           </div>
         </div>
 
-        {/* PERSISTENT BOTTOM NAVIGATION BAR */}
-        <div className="absolute bottom-0 left-0 right-0 h-20 bg-[var(--surface)] border-t border-[var(--border)] flex items-stretch z-40 transition-colors duration-250 px-3">
+        {/* PERSISTENT STATIC BOTTOM NAVIGATION BAR */}
+        <div className="absolute bottom-0 left-0 right-0 h-20 bg-[var(--surface)]/95 backdrop-blur-md border-t border-[var(--border)] flex items-stretch z-50 transition-colors duration-250 px-3 shadow-lg flex-shrink-0">
           <button
             onClick={() => setActiveTab('namaz')}
             className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-bold tracking-wider relative transition-colors ${

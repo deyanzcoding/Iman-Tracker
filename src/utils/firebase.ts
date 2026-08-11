@@ -8,6 +8,7 @@ import {
   signOut,
   onAuthStateChanged,
   updateProfile,
+  deleteUser,
   User
 } from 'firebase/auth';
 import { 
@@ -92,8 +93,34 @@ export function subscribeToAuthChanges(callback: (user: User | null) => void) {
 
 // ─── FIRESTORE PROFILE & USER DATA ───
 
+export async function updateUserProfileDetails(displayName?: string, photoURL?: string) {
+  if (!auth || !auth.currentUser) throw new Error('No user logged in');
+  const user = auth.currentUser;
+  const updates: { displayName?: string; photoURL?: string } = {};
+  if (displayName !== undefined) updates.displayName = displayName;
+  if (photoURL !== undefined) updates.photoURL = photoURL;
+  
+  await updateProfile(user, updates);
+  await saveUserProfile(auth.currentUser);
+  return auth.currentUser;
+}
+
+export async function deleteUserAccount() {
+  if (!auth || !auth.currentUser) throw new Error('No user logged in');
+  const user = auth.currentUser;
+  if (db) {
+    try {
+      await deleteDoc(doc(db, 'users', user.uid, 'data', 'appState'));
+      await deleteDoc(doc(db, 'users', user.uid));
+    } catch (e) {
+      console.warn('Could not remove Firestore documents on delete account:', e);
+    }
+  }
+  await deleteUser(user);
+}
+
 export async function saveUserProfile(user: User) {
-  if (!db || !user) return;
+  if (!db || !user || !auth?.currentUser || auth.currentUser.uid !== user.uid) return;
   try {
     const userRef = doc(db, 'users', user.uid);
     const nowIso = new Date().toISOString();
@@ -101,11 +128,12 @@ export async function saveUserProfile(user: User) {
       uid: user.uid,
       email: user.email || '',
       displayName: user.displayName || 'Believer',
+      photoURL: user.photoURL || '',
       lastLoginAt: nowIso,
       updatedAt: nowIso
     }, { merge: true });
   } catch (e) {
-    console.warn('Notice: Firestore profile sync skipped or failed (Ensure Firestore Database is created in your Firebase Console):', e);
+    console.warn('Notice: Firestore profile sync skipped or failed:', e);
   }
 }
 
@@ -121,7 +149,7 @@ export interface FileMetadataRecord {
 }
 
 export async function saveUserFileMetadata(userId: string, metadata: Omit<FileMetadataRecord, 'id'>) {
-  if (!db || !userId) return;
+  if (!db || !userId || !auth?.currentUser || auth.currentUser.uid !== userId) return;
   try {
     const filesCol = collection(db, 'users', userId, 'files');
     const docRef = doc(filesCol);
@@ -133,39 +161,37 @@ export async function saveUserFileMetadata(userId: string, metadata: Omit<FileMe
     await setDoc(docRef, record);
     return record;
   } catch (e) {
-    console.error('Failed to save file metadata to Firestore:', e);
-    throw e;
+    console.warn('Notice: Failed to save file metadata to Firestore:', e);
   }
 }
 
 export async function getUserFilesMetadata(userId: string): Promise<FileMetadataRecord[]> {
-  if (!db || !userId) return [];
+  if (!db || !userId || !auth?.currentUser || auth.currentUser.uid !== userId) return [];
   try {
     const filesCol = collection(db, 'users', userId, 'files');
     const q = query(filesCol, orderBy('uploadDate', 'desc'));
     const snap = await getDocs(q);
     return snap.docs.map(docSnap => docSnap.data() as FileMetadataRecord);
   } catch (e) {
-    console.error('Failed to fetch user files metadata:', e);
+    console.warn('Notice: Failed to fetch user files metadata:', e);
     return [];
   }
 }
 
 export async function deleteUserFileMetadata(userId: string, fileId: string) {
-  if (!db || !userId || !fileId) return;
+  if (!db || !userId || !fileId || !auth?.currentUser || auth.currentUser.uid !== userId) return;
   try {
     const fileDoc = doc(db, 'users', userId, 'files', fileId);
     await deleteDoc(fileDoc);
   } catch (e) {
-    console.error('Failed to delete file metadata:', e);
-    throw e;
+    console.warn('Notice: Failed to delete file metadata:', e);
   }
 }
 
 // ─── FIRESTORE APP STATE SYNC ───
 
 export async function saveUserAppData(userId: string, stateData: any) {
-  if (!db || !userId) return;
+  if (!db || !userId || !auth?.currentUser || auth.currentUser.uid !== userId) return;
   try {
     const stateDocRef = doc(db, 'users', userId, 'data', 'appState');
     await setDoc(stateDocRef, {
@@ -173,12 +199,12 @@ export async function saveUserAppData(userId: string, stateData: any) {
       updatedAt: new Date().toISOString()
     }, { merge: true });
   } catch (e) {
-    console.error('Failed to save app state to Firestore:', e);
+    console.warn('Notice: Failed to save app state to Firestore:', e);
   }
 }
 
 export async function getUserAppData(userId: string): Promise<any | null> {
-  if (!db || !userId) return null;
+  if (!db || !userId || !auth?.currentUser || auth.currentUser.uid !== userId) return null;
   try {
     const stateDocRef = doc(db, 'users', userId, 'data', 'appState');
     const snap = await getDoc(stateDocRef);
@@ -187,7 +213,7 @@ export async function getUserAppData(userId: string): Promise<any | null> {
     }
     return null;
   } catch (e) {
-    console.error('Failed to fetch app state from Firestore:', e);
+    console.warn('Notice: Failed to fetch app state from Firestore:', e);
     return null;
   }
 }

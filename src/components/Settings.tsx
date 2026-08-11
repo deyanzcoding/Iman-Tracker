@@ -7,9 +7,10 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Zikar } from '../types';
 import { 
-  Moon, Target, Trash2, ArrowRight, RotateCcw, ChevronDown, User, ShieldCheck, LogOut, CheckCircle2
+  Moon, Target, Trash2, ArrowRight, RotateCcw, ChevronDown, User, ShieldCheck, LogOut, CheckCircle2, AlertTriangle, Edit3
 } from 'lucide-react';
 import { User as FirebaseUser } from 'firebase/auth';
+import { deleteUserAccount } from '../utils/firebase';
 
 interface SettingsProps {
   dark: boolean;
@@ -23,6 +24,7 @@ interface SettingsProps {
   onClearData: (target: 'namaz' | 'zikar' | 'quran' | 'both') => void;
   currentUser?: FirebaseUser | null;
   onOpenAuthModal?: () => void;
+  showToast?: (msg: string) => void;
 }
 
 export default function Settings({
@@ -36,10 +38,29 @@ export default function Settings({
   onPurgeRecycleBin,
   onClearData,
   currentUser,
-  onOpenAuthModal
+  onOpenAuthModal,
+  showToast
 }: SettingsProps) {
   const [isBinOpen, setIsBinOpen] = useState(false);
   const [clearTarget, setClearTarget] = useState<'namaz' | 'zikar' | 'quran' | 'both'>('namaz');
+
+  // Account Deletion States
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
+  const handleDeleteAccount = async () => {
+    setDeletingAccount(true);
+    try {
+      await deleteUserAccount();
+      if (showToast) showToast('Your account and saved data have been permanently deleted.');
+      setShowDeleteConfirm(false);
+    } catch (err: any) {
+      console.error(err);
+      if (showToast) showToast('Failed to delete account. Please re-authenticate and try again.');
+    } finally {
+      setDeletingAccount(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in pb-10">
@@ -57,29 +78,41 @@ export default function Settings({
         </h4>
         <div className="p-4 bg-[var(--surface2)] border border-[var(--border)] rounded-2xl flex flex-col gap-3">
           {currentUser ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-500 to-emerald-400 text-white font-bold text-base flex items-center justify-center">
-                  {currentUser.displayName ? currentUser.displayName[0].toUpperCase() : 'U'}
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-500 to-emerald-400 text-white font-bold text-base flex items-center justify-center shrink-0">
+                    {currentUser.displayName ? currentUser.displayName[0].toUpperCase() : 'U'}
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <div className="text-xs font-bold text-[var(--text)] truncate">
+                      {currentUser.displayName || 'Believer'}
+                    </div>
+                    <div className="text-[10px] font-medium text-[var(--text3)] truncate">
+                      {currentUser.email}
+                    </div>
+                    <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      <CheckCircle2 className="w-3 h-3" /> Firestore Protected
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-col min-w-0">
-                  <div className="text-xs font-bold text-[var(--text)] truncate">
-                    {currentUser.displayName || 'Believer'}
-                  </div>
-                  <div className="text-[10px] font-medium text-[var(--text3)] truncate">
-                    {currentUser.email}
-                  </div>
-                  <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
-                    <CheckCircle2 className="w-3 h-3" /> Firestore Protected
-                  </div>
+                <div className="flex gap-1.5 shrink-0">
+                  <button
+                    onClick={onOpenAuthModal}
+                    className="px-3 py-1.5 rounded-xl bg-brand-500/10 hover:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-bold transition-all"
+                  >
+                    Manage
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="px-2.5 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 text-xs font-bold transition-all flex items-center gap-1"
+                    title="Delete Account"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span className="hidden xs:inline">Delete</span>
+                  </button>
                 </div>
               </div>
-              <button
-                onClick={onOpenAuthModal}
-                className="px-3 py-1.5 rounded-xl bg-brand-500/10 hover:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-bold transition-all"
-              >
-                Manage
-              </button>
             </div>
           ) : (
             <div className="flex items-center justify-between">
@@ -259,7 +292,7 @@ export default function Settings({
         </div>
       </div>
 
-      {/* 4. Selective Clear Data */}
+      {/* 4. Selective Clear Data & Account Deletion */}
       <div className="flex flex-col gap-2">
         <h4 className="text-[10px] font-black text-[var(--text3)] uppercase tracking-wider px-1">
           Danger Zone
@@ -293,8 +326,74 @@ export default function Settings({
               Clear Data
             </button>
           </div>
+
+          {currentUser && (
+            <div className="pt-3 border-t border-[var(--border)] flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-red-500/15 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-red-600 dark:text-red-400">Delete Account</div>
+                  <div className="text-[10px] font-medium text-[var(--text3)]">Remove user identity & all Firestore records</div>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="py-2 px-3 rounded-xl text-xs font-extrabold text-white bg-red-600 hover:bg-red-700 shadow-sm transition-all active:scale-95 shrink-0 flex items-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Account</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Delete Account Confirmation Dialog Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-[var(--surface)] border border-red-500/30 rounded-2xl max-w-sm w-full p-5 shadow-2xl animate-fade-in flex flex-col gap-4">
+            <div className="flex items-center gap-3 text-red-500">
+              <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-[var(--text)]">Delete Account Permanently?</h3>
+                <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Irreversible Action</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-[var(--text2)] leading-relaxed">
+              This action will <span className="font-bold text-red-500">permanently remove your user account</span> and erase all saved cloud data from Firestore (Namaz logs, Zikar count, and Quran reading progress). This cannot be undone.
+            </p>
+
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deletingAccount}
+                className="flex-1 py-3 rounded-xl text-xs font-bold text-[var(--text2)] bg-[var(--surface2)] hover:bg-[var(--surface3)] border border-[var(--border)] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deletingAccount}
+                className="flex-1 py-3 rounded-xl text-xs font-extrabold text-white bg-red-600 hover:bg-red-700 shadow-md shadow-red-500/20 flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {deletingAccount ? (
+                  <span>Deleting...</span>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Yes, Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer Signature credit line */}
       <div className="text-center py-6 text-[10px] text-[var(--text3)] font-bold flex flex-col gap-2 leading-normal">
