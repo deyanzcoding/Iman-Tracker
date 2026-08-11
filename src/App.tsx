@@ -19,6 +19,7 @@ import { Home, BookOpen, Book, BarChart2, BarChart3, Activity, Settings as Setti
 import appLogo from './assets/images/favicon_1784528732122.jpg';
 import { User } from 'firebase/auth';
 import { subscribeToAuthChanges, getUserAppData, saveUserAppData } from './utils/firebase';
+import { getStoredSalahSettings, sendSalahNotification, SalahSettings } from './utils/salah';
 
 export default function App() {
   // ─── LOCAL STORAGE PERSISTENCE LAZY INITIALIZER ───
@@ -138,6 +139,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'namaz' | 'dua' | 'quran' | 'progress' | 'settings'>('namaz');
   const [namazFilter, setNamazFilter] = useState<'weekly' | 'monthly' | 'yearly'>('weekly');
   const [showSplash, setShowSplash] = useState(true);
+  const [isReadingQuran, setIsReadingQuran] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -156,7 +158,7 @@ export default function App() {
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (swipeStartX.current === null || swipeStartY.current === null) return;
+    if (swipeStartX.current === null || swipeStartY.current === null || isReadingQuran) return;
 
     const diffX = e.changedTouches[0].clientX - swipeStartX.current;
     const diffY = e.changedTouches[0].clientY - swipeStartY.current;
@@ -592,22 +594,90 @@ export default function App() {
   // ─── POPUP OVERLAYS ENGINE ───
   const [confirmType, setConfirmType] = useState<'permanent_delete' | 'purge_bin' | 'clear_data' | null>(null);
   const [isGoalSheetOpen, setIsGoalSheetOpen] = useState(false);
-  const [goalInputs, setGoalInputs] = useState({ namaz: state.goal, zikar: state.zikarGoal || 90, quran: state.quranGoal || 90 });
+  const [goalInputs, setGoalInputs] = useState({
+    namaz: state.goal,
+    zikar: state.zikarGoal || 90,
+    quran: state.quranGoal || 90,
+    quranDailyMins: state.quranDailyTargetMins || 30
+  });
 
   const handleOpenGoalSheet = () => {
-    setGoalInputs({ namaz: state.goal, zikar: state.zikarGoal || 90, quran: state.quranGoal || 90 });
+    setGoalInputs({
+      namaz: state.goal,
+      zikar: state.zikarGoal || 90,
+      quran: state.quranGoal || 90,
+      quranDailyMins: state.quranDailyTargetMins || 30
+    });
     setIsGoalSheetOpen(true);
   };
 
   const handleSaveGoal = () => {
-    if (goalInputs.namaz < 1 || goalInputs.namaz > 100 || goalInputs.zikar < 1 || goalInputs.zikar > 100 || goalInputs.quran < 1 || goalInputs.quran > 100) {
-      showToast('Enter valid percentages (1-100)');
+    if (
+      goalInputs.namaz < 1 || goalInputs.namaz > 100 ||
+      goalInputs.zikar < 1 || goalInputs.zikar > 100 ||
+      goalInputs.quran < 1 || goalInputs.quran > 100 ||
+      goalInputs.quranDailyMins < 5 || goalInputs.quranDailyMins > 360
+    ) {
+      showToast('Enter valid goal targets & daily times');
       return;
     }
-    setState((prev) => ({ ...prev, goal: goalInputs.namaz, zikarGoal: goalInputs.zikar, quranGoal: goalInputs.quran }));
+    setState((prev) => ({
+      ...prev,
+      goal: goalInputs.namaz,
+      zikarGoal: goalInputs.zikar,
+      quranGoal: goalInputs.quran,
+      quranDailyTargetMins: goalInputs.quranDailyMins
+    }));
     setIsGoalSheetOpen(false);
-    showToast(`🎯 Monthly goals updated`);
+    showToast(`🎯 Monthly goal targets updated`);
   };
+
+  // ─── SALAH TIME BACKGROUND ALERTS SCHEDULER ───
+  const notifiedPrayersRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const checkSalahAlerts = () => {
+      const settings = getStoredSalahSettings();
+      if (!settings.enabled || !settings.timings) return;
+
+      const now = new Date();
+      const currentHM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const todayStr = today();
+
+      const prayers = [
+        { name: 'Fajr', time: settings.timings.Fajr },
+        { name: 'Dhuhr', time: settings.timings.Dhuhr },
+        { name: 'Asr', time: settings.timings.Asr },
+        { name: 'Maghrib', time: settings.timings.Maghrib },
+        { name: 'Isha', time: settings.timings.Isha }
+      ];
+
+      prayers.forEach((p) => {
+        if (!p.time) return;
+        const parts = p.time.split(':');
+        if (parts.length < 2) return;
+        const pH = parseInt(parts[0], 10);
+        const pM = parseInt(parts[1], 10);
+        if (isNaN(pH) || isNaN(pM)) return;
+
+        const targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), pH, pM, 0, 0);
+        targetDate.setMinutes(targetDate.getMinutes() - (settings.leadMinutes || 0));
+
+        const targetHM = `${String(targetDate.getHours()).padStart(2, '0')}:${String(targetDate.getMinutes()).padStart(2, '0')}`;
+        const key = `${todayStr}-${p.name}-${targetHM}`;
+
+        if (currentHM === targetHM && !notifiedPrayersRef.current.has(key)) {
+          notifiedPrayersRef.current.add(key);
+          sendSalahNotification(p.name, settings.leadMinutes || 0);
+          showToast(`🕌 ${p.name} prayer time alert (${settings.leadMinutes || 0}m lead)`);
+        }
+      });
+    };
+
+    checkSalahAlerts();
+    const interval = setInterval(checkSalahAlerts, 20000);
+    return () => clearInterval(interval);
+  }, [showToast]);
 
   const [isZikarSheetOpen, setIsZikarSheetOpen] = useState(false);
   const [zikarEditIdx, setZikarEditIdx] = useState<number | null>(null);
@@ -786,10 +856,10 @@ export default function App() {
           {/* APP HEADER */}
           {activeTab === 'settings' ? (
             /* SPECIAL USER IDENTITY CARD HEADER FOR SETTINGS TAB */
-            <div className="relative overflow-hidden flex-shrink-0 bg-gradient-to-br from-slate-800 via-emerald-950 to-slate-900 p-5 text-white mb-3 rounded-b-3xl shadow-xl">
+            <div className="relative overflow-hidden flex-shrink-0 bg-gradient-to-br from-[#12956a] via-[#16a375] to-[#1dbf87] p-5 text-white mb-3 rounded-b-3xl shadow-xl">
               {/* Decorative Glows */}
-              <div className="absolute -right-10 -top-10 w-48 h-48 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
-              <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-slate-500/20 rounded-full blur-xl pointer-events-none" />
+              <div className="absolute -right-10 -top-10 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="absolute -left-10 -bottom-10 w-40 h-40 bg-black/10 rounded-full blur-xl pointer-events-none" />
 
               {/* Card Title Bar */}
               <div className="flex items-center justify-between relative z-10 mb-4 pb-2.5 border-b border-white/10">
@@ -849,7 +919,6 @@ export default function App() {
             <div className={`relative overflow-hidden flex-shrink-0 bg-gradient-to-br p-3 pb-4 text-white mb-2 ${
               activeTab === 'dua' ? 'from-blue-600 to-blue-400' : 
               activeTab === 'quran' ? 'from-purple-600 to-purple-400' : 
-              activeTab === 'progress' ? 'from-teal-700 to-emerald-800' :
               'from-[#12956a] to-[#1dbf87]'
             }`}>
               {/* Subtle Decorative Circular Shapes */}
@@ -1020,11 +1089,24 @@ export default function App() {
           )}
 
           {activeTab === 'quran' && (
-            <QuranReader isOnline={true} showToast={showToast} currentUser={currentUser} />
+            <QuranReader 
+              isOnline={true} 
+              showToast={showToast} 
+              currentUser={currentUser} 
+              onReadingStateChange={setIsReadingQuran}
+            />
           )}
 
           {activeTab === 'progress' && (
-            <Analytics namaz={state.namaz} duas={state.duas} goal={state.goal} />
+            <Analytics
+              namaz={state.namaz}
+              duas={state.duas}
+              goal={state.goal}
+              zikarGoal={state.zikarGoal}
+              quranGoal={state.quranGoal}
+              quranDailyTargetMins={state.quranDailyTargetMins}
+              onOpenGoalSheet={handleOpenGoalSheet}
+            />
           )}
 
           {activeTab === 'settings' && (
@@ -1032,6 +1114,9 @@ export default function App() {
               dark={state.dark}
               onToggleDark={() => setState((prev) => ({ ...prev, dark: !prev.dark }))}
               goal={state.goal}
+              zikarGoal={state.zikarGoal}
+              quranGoal={state.quranGoal}
+              quranDailyTargetMins={state.quranDailyTargetMins}
               onOpenGoalSheet={handleOpenGoalSheet}
               deletedDuas={state.deletedDuas || []}
               onRestoreZikar={handleRestoreZikar}
@@ -1047,112 +1132,177 @@ export default function App() {
         </div>
 
         {/* PERSISTENT STATIC BOTTOM NAVIGATION BAR */}
-        <div className="absolute bottom-0 left-0 right-0 h-20 bg-[var(--surface)]/95 backdrop-blur-md border-t border-[var(--border)] flex items-stretch z-50 transition-colors duration-250 px-3 shadow-lg flex-shrink-0">
-          <button
-            onClick={() => setActiveTab('namaz')}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-bold tracking-wider relative transition-colors ${
-              activeTab === 'namaz' ? 'text-brand-500' : 'text-[var(--text3)] hover:text-[var(--text2)] opacity-60 hover:opacity-100'
-            }`}
-          >
-            <Home className={`w-[20px] h-[20px] transition-transform ${activeTab === 'namaz' ? 'scale-110 text-brand-500' : ''}`} />
-            <span>Namaz</span>
-            {activeTab === 'namaz' && <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand-500" />}
-          </button>
-          <button
-            onClick={() => setActiveTab('dua')}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-bold tracking-wider relative transition-colors ${
-              activeTab === 'dua' ? 'text-brand-500' : 'text-[var(--text3)] hover:text-[var(--text2)] opacity-60 hover:opacity-100'
-            }`}
-          >
-            <BarChart2 className={`w-[20px] h-[20px] transition-transform ${activeTab === 'dua' ? 'scale-110 text-brand-500' : ''}`} />
-            <span>Zikar</span>
-            {activeTab === 'dua' && <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand-500" />}
-          </button>
-          <button
-            onClick={() => setActiveTab('quran')}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-bold tracking-wider relative transition-colors ${
-              activeTab === 'quran' ? 'text-brand-500' : 'text-[var(--text3)] hover:text-[var(--text2)] opacity-60 hover:opacity-100'
-            }`}
-          >
-            <Book className={`w-[20px] h-[20px] transition-transform ${activeTab === 'quran' ? 'scale-110 text-brand-500' : ''}`} />
-            <span>Quran</span>
-            {activeTab === 'quran' && <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand-500" />}
-          </button>
-          <button
-            onClick={() => setActiveTab('progress')}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-bold tracking-wider relative transition-colors ${
-              activeTab === 'progress' ? 'text-brand-500' : 'text-[var(--text3)] hover:text-[var(--text2)] opacity-60 hover:opacity-100'
-            }`}
-          >
-            <Activity className={`w-[20px] h-[20px] transition-transform ${activeTab === 'progress' ? 'scale-110 text-brand-500' : ''}`} />
-            <span>Progress</span>
-            {activeTab === 'progress' && <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand-500" />}
-          </button>
-          <button
-            onClick={() => setActiveTab('settings')}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-bold tracking-wider relative transition-colors ${
-              activeTab === 'settings' ? 'text-brand-500' : 'text-[var(--text3)] hover:text-[var(--text2)] opacity-60 hover:opacity-100'
-            }`}
-          >
-            <SettingsIcon className={`w-[20px] h-[20px] transition-transform ${activeTab === 'settings' ? 'scale-110 text-brand-500' : ''}`} />
-            <span>Settings</span>
-            {activeTab === 'settings' && <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand-500" />}
-          </button>
-        </div>
+        {!isReadingQuran && (
+          <div className="absolute bottom-0 left-0 right-0 h-20 bg-[var(--surface)]/95 backdrop-blur-md border-t border-[var(--border)] flex items-stretch z-50 transition-colors duration-250 px-3 shadow-lg flex-shrink-0">
+            <button
+              onClick={() => setActiveTab('namaz')}
+              className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-bold tracking-wider relative transition-colors ${
+                activeTab === 'namaz' ? 'text-brand-500' : 'text-[var(--text3)] hover:text-[var(--text2)] opacity-60 hover:opacity-100'
+              }`}
+            >
+              <Home className={`w-[20px] h-[20px] transition-transform ${activeTab === 'namaz' ? 'scale-110 text-brand-500' : ''}`} />
+              <span>Namaz</span>
+              {activeTab === 'namaz' && <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand-500" />}
+            </button>
+            <button
+              onClick={() => setActiveTab('dua')}
+              className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-bold tracking-wider relative transition-colors ${
+                activeTab === 'dua' ? 'text-brand-500' : 'text-[var(--text3)] hover:text-[var(--text2)] opacity-60 hover:opacity-100'
+              }`}
+            >
+              <BarChart2 className={`w-[20px] h-[20px] transition-transform ${activeTab === 'dua' ? 'scale-110 text-brand-500' : ''}`} />
+              <span>Zikar</span>
+              {activeTab === 'dua' && <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand-500" />}
+            </button>
+            <button
+              onClick={() => setActiveTab('quran')}
+              className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-bold tracking-wider relative transition-colors ${
+                activeTab === 'quran' ? 'text-brand-500' : 'text-[var(--text3)] hover:text-[var(--text2)] opacity-60 hover:opacity-100'
+              }`}
+            >
+              <Book className={`w-[20px] h-[20px] transition-transform ${activeTab === 'quran' ? 'scale-110 text-brand-500' : ''}`} />
+              <span>Quran</span>
+              {activeTab === 'quran' && <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand-500" />}
+            </button>
+            <button
+              onClick={() => setActiveTab('progress')}
+              className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-bold tracking-wider relative transition-colors ${
+                activeTab === 'progress' ? 'text-brand-500' : 'text-[var(--text3)] hover:text-[var(--text2)] opacity-60 hover:opacity-100'
+              }`}
+            >
+              <Activity className={`w-[20px] h-[20px] transition-transform ${activeTab === 'progress' ? 'scale-110 text-brand-500' : ''}`} />
+              <span>Progress</span>
+              {activeTab === 'progress' && <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand-500" />}
+            </button>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`flex-1 flex flex-col items-center justify-center gap-1 text-[10px] font-bold tracking-wider relative transition-colors ${
+                activeTab === 'settings' ? 'text-brand-500' : 'text-[var(--text3)] hover:text-[var(--text2)] opacity-60 hover:opacity-100'
+              }`}
+            >
+              <SettingsIcon className={`w-[20px] h-[20px] transition-transform ${activeTab === 'settings' ? 'scale-110 text-brand-500' : ''}`} />
+              <span>Settings</span>
+              {activeTab === 'settings' && <div className="absolute bottom-1 w-1 h-1 rounded-full bg-brand-500" />}
+            </button>
+          </div>
+        )}
 
         {/* ─── OVERLAYS & SHEETS ─── */}
 
         {/* Goal Set Bottom Sheet */}
-        <BottomSheet isOpen={isGoalSheetOpen} onClose={() => setIsGoalSheetOpen(false)} title="Set Monthly Goals">
+        <BottomSheet isOpen={isGoalSheetOpen} onClose={() => setIsGoalSheetOpen(false)} title="Configure Monthly Goals">
           <div className="flex flex-col gap-4">
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="text-[11px] font-bold text-[var(--text2)] uppercase tracking-wider block mb-1.5 text-center">
-                  Namaz
+            
+            {/* Target Percentages Grid */}
+            <div className="grid grid-cols-3 gap-2.5">
+              <div className="p-3 rounded-2xl bg-[var(--surface2)] border border-[var(--border)] text-center flex flex-col gap-1">
+                <label className="text-[10px] font-black text-emerald-500 uppercase tracking-wider block">
+                  Namaz Target
                 </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={goalInputs.namaz || ''}
-                  onChange={(e) => setGoalInputs(p => ({...p, namaz: parseInt(e.target.value) || 0}))}
-                  placeholder="90"
-                  className="w-full p-3 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-bold text-center outline-none focus:border-brand-500 transition-colors"
-                />
+                <div className="flex items-center justify-center gap-1">
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={goalInputs.namaz || ''}
+                    onChange={(e) => setGoalInputs(p => ({...p, namaz: parseInt(e.target.value) || 0}))}
+                    placeholder="90"
+                    className="w-16 p-2 border border-[var(--border)] rounded-xl bg-[var(--surface)] text-[var(--text)] text-base font-black text-center outline-none focus:border-emerald-500 transition-colors"
+                  />
+                  <span className="text-sm font-bold text-[var(--text3)]">%</span>
+                </div>
               </div>
-              <div>
-                <label className="text-[11px] font-bold text-[var(--text2)] uppercase tracking-wider block mb-1.5 text-center">
-                  Zikar
+
+              <div className="p-3 rounded-2xl bg-[var(--surface2)] border border-[var(--border)] text-center flex flex-col gap-1">
+                <label className="text-[10px] font-black text-blue-500 uppercase tracking-wider block">
+                  Zikar Target
                 </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={goalInputs.zikar || ''}
-                  onChange={(e) => setGoalInputs(p => ({...p, zikar: parseInt(e.target.value) || 0}))}
-                  placeholder="90"
-                  className="w-full p-3 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-bold text-center outline-none focus:border-blue-500 transition-colors"
-                />
+                <div className="flex items-center justify-center gap-1">
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={goalInputs.zikar || ''}
+                    onChange={(e) => setGoalInputs(p => ({...p, zikar: parseInt(e.target.value) || 0}))}
+                    placeholder="90"
+                    className="w-16 p-2 border border-[var(--border)] rounded-xl bg-[var(--surface)] text-[var(--text)] text-base font-black text-center outline-none focus:border-blue-500 transition-colors"
+                  />
+                  <span className="text-sm font-bold text-[var(--text3)]">%</span>
+                </div>
               </div>
-              <div>
-                <label className="text-[11px] font-bold text-[var(--text2)] uppercase tracking-wider block mb-1.5 text-center">
-                  Quran
+
+              <div className="p-3 rounded-2xl bg-[var(--surface2)] border border-[var(--border)] text-center flex flex-col gap-1">
+                <label className="text-[10px] font-black text-purple-500 uppercase tracking-wider block">
+                  Quran Target
                 </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={goalInputs.quran || ''}
-                  onChange={(e) => setGoalInputs(p => ({...p, quran: parseInt(e.target.value) || 0}))}
-                  placeholder="90"
-                  className="w-full p-3 border-2 border-[var(--border)] rounded-xl bg-[var(--surface2)] text-[var(--text)] text-sm font-bold text-center outline-none focus:border-purple-500 transition-colors"
-                />
+                <div className="flex items-center justify-center gap-1">
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={goalInputs.quran || ''}
+                    onChange={(e) => setGoalInputs(p => ({...p, quran: parseInt(e.target.value) || 0}))}
+                    placeholder="90"
+                    className="w-16 p-2 border border-[var(--border)] rounded-xl bg-[var(--surface)] text-[var(--text)] text-base font-black text-center outline-none focus:border-purple-500 transition-colors"
+                  />
+                  <span className="text-sm font-bold text-[var(--text3)]">%</span>
+                </div>
               </div>
             </div>
-            <p className="text-[10px] text-[var(--text3)] leading-relaxed mt-[-4px]">
-              Set your monthly target completion percentages for each activity (1-100%).
+
+            {/* Quran Daily Reading Time Target */}
+            <div className="p-3.5 rounded-2xl bg-[var(--surface2)] border border-[var(--border)] flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider">
+                  Quran Daily Reading Time Target
+                </label>
+                <span className="text-[11px] font-black text-[var(--text)]">
+                  {goalInputs.quranDailyMins >= 60
+                    ? `${(goalInputs.quranDailyMins / 60).toFixed(1)} hrs/day`
+                    : `${goalInputs.quranDailyMins} mins/day`}
+                </span>
+              </div>
+
+              {/* Presets */}
+              <div className="grid grid-cols-5 gap-1.5">
+                {[15, 30, 45, 60, 90].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setGoalInputs((p) => ({ ...p, quranDailyMins: m }))}
+                    className={`py-2 rounded-xl text-xs font-black transition-all ${
+                      goalInputs.quranDailyMins === m
+                        ? 'bg-purple-500 text-white shadow-sm'
+                        : 'bg-[var(--surface)] border border-[var(--border)] text-[var(--text2)] hover:border-purple-500/50'
+                    }`}
+                  >
+                    {m >= 60 ? `${m / 60} hr` : `${m}m`}
+                  </button>
+                ))}
+              </div>
+
+              {/* Custom Mins Slider / Input */}
+              <div className="flex items-center gap-3 pt-1">
+                <input
+                  type="range"
+                  min="5"
+                  max="180"
+                  step="5"
+                  value={goalInputs.quranDailyMins || 30}
+                  onChange={(e) => setGoalInputs((p) => ({ ...p, quranDailyMins: parseInt(e.target.value) || 30 }))}
+                  className="flex-1 accent-purple-500 cursor-pointer"
+                />
+                <span className="text-[10px] font-bold text-[var(--text3)] w-24 text-right">
+                  Monthly Total: {((goalInputs.quranDailyMins * 30) / 60).toFixed(1)} hrs Target
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[10px] text-[var(--text3)] leading-relaxed">
+              Target percentages (1-100%) define your completion goal. Quran monthly target hours are automatically calculated based on daily reading target time.
             </p>
-            <div className="flex gap-2 mt-2">
+
+            <div className="flex gap-2 mt-1">
               <button
                 onClick={() => setIsGoalSheetOpen(false)}
                 className="flex-1 py-3.5 rounded-xl text-sm font-bold text-[var(--text2)] bg-[var(--surface2)] hover:bg-[var(--surface3)] border border-[var(--border)] transition-colors active:scale-95"
@@ -1163,7 +1313,7 @@ export default function App() {
                 onClick={handleSaveGoal}
                 className="flex-1 py-3.5 rounded-xl text-sm font-black text-white bg-brand-500 hover:bg-brand-600 shadow-md shadow-brand-500/15 transition-colors active:scale-95"
               >
-                Set Goal
+                Save Goals
               </button>
             </div>
           </div>

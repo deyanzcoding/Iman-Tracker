@@ -41,7 +41,10 @@ export interface AppState {
   namaz: NamazData;
   duas: Zikar[];
   deletedDuas: Zikar[];
-  goal: number; zikarGoal: number; quranGoal: number;
+  goal: number; // Namaz target completion percentage (1-100)
+  zikarGoal: number; // Zikar target completion percentage (1-100)
+  quranGoal: number; // Quran target completion percentage (1-100)
+  quranDailyTargetMins?: number; // Daily Quran reading target in minutes
   bestStreak: number;
   dark: boolean;
   lastActiveDate: string;

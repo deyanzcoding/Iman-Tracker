@@ -7,15 +7,20 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Zikar } from '../types';
 import { 
-  Moon, Target, Trash2, ArrowRight, RotateCcw, ChevronDown, User, ShieldCheck, LogOut, CheckCircle2, AlertTriangle, Edit3
+  Moon, Target, Trash2, ArrowRight, RotateCcw, ChevronDown, User, ShieldCheck, LogOut, CheckCircle2, AlertTriangle, Edit3, BookOpen, Heart
 } from 'lucide-react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { deleteUserAccount } from '../utils/firebase';
+import SalahRemindersSettings from './SalahRemindersSettings';
+import { SalahSettings } from '../utils/salah';
 
 interface SettingsProps {
   dark: boolean;
   onToggleDark: () => void;
   goal: number;
+  zikarGoal?: number;
+  quranGoal?: number;
+  quranDailyTargetMins?: number;
   onOpenGoalSheet: () => void;
   deletedDuas: Zikar[];
   onRestoreZikar: (idx: number) => void;
@@ -25,12 +30,16 @@ interface SettingsProps {
   currentUser?: FirebaseUser | null;
   onOpenAuthModal?: () => void;
   showToast?: (msg: string) => void;
+  onSalahSettingsChange?: (newSettings: SalahSettings) => void;
 }
 
 export default function Settings({
   dark,
   onToggleDark,
   goal,
+  zikarGoal = 90,
+  quranGoal = 90,
+  quranDailyTargetMins = 30,
   onOpenGoalSheet,
   deletedDuas,
   onRestoreZikar,
@@ -39,7 +48,8 @@ export default function Settings({
   onClearData,
   currentUser,
   onOpenAuthModal,
-  showToast
+  showToast,
+  onSalahSettingsChange
 }: SettingsProps) {
   const [isBinOpen, setIsBinOpen] = useState(false);
   const [clearTarget, setClearTarget] = useState<'namaz' | 'zikar' | 'quran' | 'both'>('namaz');
@@ -167,27 +177,54 @@ export default function Settings({
         </div>
       </div>
 
-      {/* 2. Goal Configurations */}
+      {/* 2. Salah Reminders & Notifications */}
       <div className="flex flex-col gap-2">
         <h4 className="text-[10px] font-black text-[var(--text3)] uppercase tracking-wider px-1">
-          Goals
+          Prayer Reminders
+        </h4>
+        <SalahRemindersSettings showToast={showToast} onSettingsChange={onSalahSettingsChange} />
+      </div>
+
+      {/* 3. Goal Configurations */}
+      <div className="flex flex-col gap-2">
+        <h4 className="text-[10px] font-black text-[var(--text3)] uppercase tracking-wider px-1">
+          Monthly Goal Targets
         </h4>
         <div
           onClick={onOpenGoalSheet}
-          className="flex items-center justify-between p-4 bg-[var(--surface2)] border border-[var(--border)] rounded-2xl cursor-pointer hover:bg-[var(--surface3)]/40 transition-colors"
+          className="flex flex-col gap-3 p-4 bg-[var(--surface2)] border border-[var(--border)] rounded-2xl cursor-pointer hover:bg-[var(--surface3)]/40 transition-colors shadow-sm"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-brand-500/10 text-brand-500 flex items-center justify-center">
-              <Target className="w-5 h-5 stroke-[2]" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-brand-500/10 text-brand-500 flex items-center justify-center">
+                <Target className="w-5 h-5 stroke-[2]" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-[var(--text)]">Configure Monthly Goals</div>
+                <div className="text-[10px] font-semibold text-[var(--text3)]">Target completion percentages & daily Quran time</div>
+              </div>
             </div>
-            <div>
-              <div className="text-sm font-bold text-[var(--text)]">Monthly Prayer Goal</div>
-              <div className="text-[10px] font-semibold text-[var(--text3)]">Currently set to {goal}% completion</div>
+            <div className="flex items-center gap-1 text-xs font-bold text-brand-500 hover:text-brand-600">
+              Edit
+              <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
             </div>
           </div>
-          <div className="flex items-center gap-1 text-xs font-bold text-brand-500 hover:text-brand-600">
-            Edit
-            <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+
+          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[var(--border)]">
+            <div className="p-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-center">
+              <div className="text-[9px] font-bold text-[var(--text3)] uppercase">Namaz</div>
+              <div className="text-sm font-black text-emerald-500 mt-0.5">{goal}%</div>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-center">
+              <div className="text-[9px] font-bold text-[var(--text3)] uppercase">Zikar</div>
+              <div className="text-sm font-black text-blue-500 mt-0.5">{zikarGoal}%</div>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-center">
+              <div className="text-[9px] font-bold text-[var(--text3)] uppercase">Quran ({quranDailyTargetMins}m/d)</div>
+              <div className="text-sm font-black text-purple-500 mt-0.5">{quranGoal}%</div>
+            </div>
           </div>
         </div>
       </div>

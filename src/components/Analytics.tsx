@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { PRAYERS, NamazData, Zikar } from '../types';
 import {
   weekDates,
@@ -18,15 +18,28 @@ import {
   today,
   daysInMonth
 } from '../utils/date';
-import { Flame, Trophy, TrendingUp, HelpCircle } from 'lucide-react';
+import { Flame, Trophy, TrendingUp, HelpCircle, Target, CheckCircle2, Clock, BookOpen, Edit3, Award, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface AnalyticsProps {
   namaz: NamazData;
   duas: Zikar[];
   goal: number;
+  zikarGoal?: number;
+  quranGoal?: number;
+  quranDailyTargetMins?: number;
+  onOpenGoalSheet?: () => void;
 }
 
-export default function Analytics({ namaz, duas, goal }: AnalyticsProps) {
+export default function Analytics({
+  namaz,
+  duas,
+  goal,
+  zikarGoal = 90,
+  quranGoal = 90,
+  quranDailyTargetMins = 30,
+  onOpenGoalSheet
+}: AnalyticsProps) {
+  const [isMonthlyGoalsOpen, setIsMonthlyGoalsOpen] = useState(false);
   const [progFilter, setProgFilter] = useState<'weekly' | 'monthly' | 'yearly'>('weekly');
   const [chartType, setChartType] = useState<'namaz' | 'zikar' | 'quran'>('namaz');
   const [chartPeriod, setChartPeriod] = useState<'weekly' | 'monthly'>('weekly');
@@ -372,6 +385,84 @@ const getHeatmapColorClass = (
   return 'bg-blue-700 shadow-md';
 };
 
+  // ─── MONTHLY GOALS CALCULATIONS ───
+  const monthlyGoalMetrics = useMemo(() => {
+    const curYear = thisYear();
+    const curMonth = thisMonth();
+    const daysInCurMonth = daysInMonth(curYear, curMonth);
+    const monthDateStrings = monthDates(curYear, curMonth);
+    const monthName = MONTH_FULL[curMonth - 1];
+
+    // 1. Namaz Monthly Goal
+    const totalPossibleNamaz = 5 * daysInCurMonth;
+    let prayedCountMonth = 0;
+    monthDateStrings.forEach((ds) => {
+      PRAYERS.forEach((p) => {
+        if ((namaz[ds]?.[p.k] ?? 0) === 1) prayedCountMonth++;
+      });
+    });
+    const namazActualPct = totalPossibleNamaz > 0 ? Math.round((prayedCountMonth / totalPossibleNamaz) * 100) : 0;
+
+    // 2. Zikar Monthly Goal
+    const totalMonthlyZikarTarget = duas.reduce((acc, d) => acc + (d.target * d.daily * daysInCurMonth), 0);
+    let completedZikarMonth = 0;
+    duas.forEach((d) => {
+      // Completed dates in current month
+      const completedDaysCount = monthDateStrings.filter((ds) => d.completedDates?.includes(ds)).length;
+      completedZikarMonth += completedDaysCount * (d.target * d.daily);
+
+      // Today's active progress if today is in current month and not yet added as completed date
+      const t = today();
+      if (monthDateStrings.includes(t) && !d.completedDates?.includes(t)) {
+        const sessions = Array.isArray(d.sessions) ? d.sessions : [];
+        const todayCount = sessions.reduce((sAcc, sVal) => sAcc + Math.min(sVal, d.target), 0);
+        completedZikarMonth += todayCount;
+      }
+    });
+    const zikarActualPct = totalMonthlyZikarTarget > 0 ? Math.min(100, Math.round((completedZikarMonth / totalMonthlyZikarTarget) * 100)) : 0;
+
+    // 3. Quran Monthly Goal
+    const totalMonthlyTargetMins = (quranDailyTargetMins || 30) * daysInCurMonth;
+    let actualQuranMinsMonth = 0;
+    monthDateStrings.forEach((ds) => {
+      if (quranReadTimes[ds]) {
+        actualQuranMinsMonth += quranReadTimes[ds];
+      }
+    });
+    const quranActualPct = totalMonthlyTargetMins > 0 ? Math.min(100, Math.round((actualQuranMinsMonth / totalMonthlyTargetMins) * 100)) : 0;
+
+    const formatMinsHM = (mins: number) => {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      if (h === 0) return `${m}m`;
+      return m === 0 ? `${h}h` : `${h}h ${m}m`;
+    };
+
+    return {
+      curYear,
+      curMonth,
+      daysInCurMonth,
+      monthName,
+      // Namaz
+      totalPossibleNamaz,
+      prayedCountMonth,
+      namazActualPct,
+      namazTargetPct: goal,
+      // Zikar
+      totalMonthlyZikarTarget,
+      completedZikarMonth,
+      zikarActualPct,
+      zikarTargetPct: zikarGoal,
+      // Quran
+      quranDailyTargetMins,
+      totalMonthlyTargetMins,
+      actualQuranMinsMonth,
+      quranActualPct,
+      quranTargetPct: quranGoal,
+      formatMinsHM
+    };
+  }, [namaz, duas, quranReadTimes, goal, zikarGoal, quranGoal, quranDailyTargetMins]);
+
   const handleCellInteractive = (e: React.MouseEvent, ds: string | null) => {
     if (!ds || ds > tday) return;
     
@@ -416,10 +507,216 @@ const getHeatmapColorClass = (
 
   return (
     <div className="flex flex-col gap-4 animate-fade-in pb-10">
+      {/* Monthly Goals Progress Dashboard (Collapsible Accordion) */}
+      <div className="bg-[var(--surface2)] border border-[var(--border)] rounded-3xl shadow-sm overflow-hidden transition-all">
+        {/* Accordion Header Bar */}
+        <div 
+          onClick={() => setIsMonthlyGoalsOpen(!isMonthlyGoalsOpen)}
+          className="p-4 flex items-center justify-between cursor-pointer hover:bg-[var(--surface3)] transition-colors select-none"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-brand-500/10 text-brand-500 flex items-center justify-center shrink-0">
+              <Target className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-[var(--text)] uppercase tracking-wider flex items-center gap-1.5">
+                <span>Monthly Goals ({monthlyGoalMetrics.monthName} {monthlyGoalMetrics.curYear})</span>
+              </h3>
+              <p className="text-[10px] font-semibold text-[var(--text3)] mt-0.5">
+                {isMonthlyGoalsOpen ? 'Click to hide monthly goals' : 'Click drop-down to view monthly goals progress'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            {/* Quick Stats Badges when collapsed */}
+            {!isMonthlyGoalsOpen && (
+              <div className="hidden xs:flex items-center gap-1.5 mr-1">
+                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  {monthlyGoalMetrics.namazActualPct}%
+                </span>
+                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                  {monthlyGoalMetrics.zikarActualPct}%
+                </span>
+                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                  {monthlyGoalMetrics.quranActualPct}%
+                </span>
+              </div>
+            )}
+
+            {onOpenGoalSheet && isMonthlyGoalsOpen && (
+              <button
+                onClick={onOpenGoalSheet}
+                className="px-3 py-1.5 rounded-xl bg-brand-500/10 hover:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-extrabold flex items-center gap-1 transition-all active:scale-95"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Edit</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => setIsMonthlyGoalsOpen(!isMonthlyGoalsOpen)}
+              className="w-8 h-8 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-[var(--text2)] flex items-center justify-center hover:text-[var(--text)] transition-transform active:scale-90"
+              title={isMonthlyGoalsOpen ? 'Collapse Goals' : 'Expand Goals'}
+            >
+              {isMonthlyGoalsOpen ? <ChevronUp className="w-4 h-4 stroke-[2.5]" /> : <ChevronDown className="w-4 h-4 stroke-[2.5]" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Accordion Expandable Dropdown Body */}
+        <AnimatePresence>
+          {isMonthlyGoalsOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              className="overflow-hidden border-t border-[var(--border)] px-4 pb-4 pt-3 flex flex-col gap-3"
+            >
+              <div className="flex items-center justify-between text-[10px] font-bold text-[var(--text3)]">
+                <span>Monthly Target Breakdown ({monthlyGoalMetrics.daysInCurMonth} days)</span>
+                {onOpenGoalSheet && (
+                  <button
+                    onClick={onOpenGoalSheet}
+                    className="text-brand-500 hover:underline font-extrabold"
+                  >
+                    Configure Targets
+                  </button>
+                )}
+              </div>
+
+              {/* 3 Goal Cards */}
+              <div className="flex flex-col gap-2.5">
+                
+                {/* 1. Namaz Goal Card */}
+                <div className="p-3.5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex flex-col gap-2 shadow-xs">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-extrabold text-[var(--text)] flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
+                      Namaz Goal
+                    </span>
+                    <div className="flex items-center gap-1 font-bold">
+                      <span className="text-emerald-500 font-black text-sm">{monthlyGoalMetrics.namazActualPct}%</span>
+                      <span className="text-[var(--text3)] text-[11px]">/ Target: {monthlyGoalMetrics.namazTargetPct}%</span>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar with Target Line */}
+                  <div className="relative w-full h-3 rounded-full bg-[var(--border)] overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.min(100, monthlyGoalMetrics.namazActualPct)}%` }}
+                      transition={{ duration: 0.8, ease: 'easeOut' }}
+                      className="h-full bg-emerald-500 rounded-full"
+                    />
+                    <div
+                      className="absolute top-0 bottom-0 w-0.5 bg-neutral-900 dark:bg-white shadow-md z-10"
+                      style={{ left: `${Math.min(100, monthlyGoalMetrics.namazTargetPct)}%` }}
+                      title={`Target: ${monthlyGoalMetrics.namazTargetPct}%`}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[10px] font-bold text-[var(--text3)]">
+                    <span>Completed: {monthlyGoalMetrics.prayedCountMonth} / {monthlyGoalMetrics.totalPossibleNamaz} prayers</span>
+                    <span>
+                      {monthlyGoalMetrics.namazActualPct >= monthlyGoalMetrics.namazTargetPct ? (
+                        <span className="text-emerald-500 font-extrabold">🎉 Goal Met!</span>
+                      ) : (
+                        <span>Need {(monthlyGoalMetrics.namazTargetPct - monthlyGoalMetrics.namazActualPct)}% more</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Zikar Goal Card */}
+                <div className="p-3.5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex flex-col gap-2 shadow-xs">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-extrabold text-[var(--text)] flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" />
+                      Zikar Goal
+                    </span>
+                    <div className="flex items-center gap-1 font-bold">
+                      <span className="text-blue-500 font-black text-sm">{monthlyGoalMetrics.zikarActualPct}%</span>
+                      <span className="text-[var(--text3)] text-[11px]">/ Target: {monthlyGoalMetrics.zikarTargetPct}%</span>
+                    </div>
+                  </div>
+
+                  <div className="relative w-full h-3 rounded-full bg-[var(--border)] overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.min(100, monthlyGoalMetrics.zikarActualPct)}%` }}
+                      transition={{ duration: 0.8, ease: 'easeOut' }}
+                      className="h-full bg-blue-500 rounded-full"
+                    />
+                    <div
+                      className="absolute top-0 bottom-0 w-0.5 bg-neutral-900 dark:bg-white shadow-md z-10"
+                      style={{ left: `${Math.min(100, monthlyGoalMetrics.zikarTargetPct)}%` }}
+                      title={`Target: ${monthlyGoalMetrics.zikarTargetPct}%`}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[10px] font-bold text-[var(--text3)]">
+                    <span>Completed: {monthlyGoalMetrics.completedZikarMonth.toLocaleString()} / {monthlyGoalMetrics.totalMonthlyZikarTarget.toLocaleString()} counts</span>
+                    <span>
+                      {monthlyGoalMetrics.zikarActualPct >= monthlyGoalMetrics.zikarTargetPct ? (
+                        <span className="text-blue-500 font-extrabold">🎉 Goal Met!</span>
+                      ) : (
+                        <span>Need {(monthlyGoalMetrics.zikarTargetPct - monthlyGoalMetrics.zikarActualPct)}% more</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. Quran Goal Card */}
+                <div className="p-3.5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex flex-col gap-2 shadow-xs">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-extrabold text-[var(--text)] flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-purple-500 inline-block" />
+                      Quran Goal ({monthlyGoalMetrics.quranDailyTargetMins >= 60 ? (monthlyGoalMetrics.quranDailyTargetMins / 60).toFixed(1) + 'h/d' : monthlyGoalMetrics.quranDailyTargetMins + 'm/d'})
+                    </span>
+                    <div className="flex items-center gap-1 font-bold">
+                      <span className="text-purple-500 font-black text-sm">{monthlyGoalMetrics.quranActualPct}%</span>
+                      <span className="text-[var(--text3)] text-[11px]">/ Target: {monthlyGoalMetrics.quranTargetPct}%</span>
+                    </div>
+                  </div>
+
+                  <div className="relative w-full h-3 rounded-full bg-[var(--border)] overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.min(100, monthlyGoalMetrics.quranActualPct)}%` }}
+                      transition={{ duration: 0.8, ease: 'easeOut' }}
+                      className="h-full bg-purple-500 rounded-full"
+                    />
+                    <div
+                      className="absolute top-0 bottom-0 w-0.5 bg-neutral-900 dark:bg-white shadow-md z-10"
+                      style={{ left: `${Math.min(100, monthlyGoalMetrics.quranTargetPct)}%` }}
+                      title={`Target: ${monthlyGoalMetrics.quranTargetPct}%`}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[10px] font-bold text-[var(--text3)]">
+                    <span>Read: {monthlyGoalMetrics.formatMinsHM(monthlyGoalMetrics.actualQuranMinsMonth)} / {monthlyGoalMetrics.formatMinsHM(monthlyGoalMetrics.totalMonthlyTargetMins)} target</span>
+                    <span>
+                      {monthlyGoalMetrics.quranActualPct >= monthlyGoalMetrics.quranTargetPct ? (
+                        <span className="text-purple-500 font-extrabold">🎉 Goal Met!</span>
+                      ) : (
+                        <span>Need {(monthlyGoalMetrics.quranTargetPct - monthlyGoalMetrics.quranActualPct)}% more</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
       {/* Tab Filter Row */}
-      <div className="flex items-center justify-between mb-1">
+      <div className="flex items-center justify-between mt-2 mb-1">
         <div className="text-xs font-bold text-[var(--text)] uppercase tracking-widest">
-          Analytics & Insights
+          Analytics & Activity Breakdown
         </div>
       </div>
 

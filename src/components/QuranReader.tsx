@@ -22,7 +22,10 @@ import {
   FileDown,
   Bookmark,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw
 } from 'lucide-react';
 
 // Configure pdfjs worker to run in browser matching react-pdf version
@@ -141,9 +144,10 @@ interface QuranReaderProps {
   isOnline: boolean;
   showToast: (msg: string) => void;
   currentUser?: User | null;
+  onReadingStateChange?: (isReading: boolean) => void;
 }
 
-export default function QuranReader({ isOnline, showToast, currentUser }: QuranReaderProps) {
+export default function QuranReader({ isOnline, showToast, currentUser, onReadingStateChange }: QuranReaderProps) {
   const [loadedParaNumbers, setLoadedParaNumbers] = useState<number[]>([]);
   const [activePara, setActivePara] = useState<ParaItem | null>(null);
   const [activeBlobUrl, setActiveBlobUrl] = useState<string | null>(null);
@@ -151,11 +155,100 @@ export default function QuranReader({ isOnline, showToast, currentUser }: QuranR
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [isHoveredInfo, setIsHoveredInfo] = useState(false);
 
-  // PDF controls
+  // PDF & Zoom controls
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState<number>(1);
+  const [zoomScale, setZoomScale] = useState<number>(1.0);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState<number>(300);
+
+  // Notify parent App component when user opens or closes a Para (to hide bottom navigation bar)
+  useEffect(() => {
+    if (onReadingStateChange) {
+      onReadingStateChange(!!(activePara && activeBlobUrl));
+    }
+  }, [activePara, activeBlobUrl, onReadingStateChange]);
+
+  // Touch gesture handling for Swipe and Pinch-Zoom
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+  const pinchStartDist = useRef<number | null>(null);
+  const pinchStartScale = useRef<number>(1.0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      touchStartX.current = e.touches[0].clientX;
+      touchStartY.current = e.touches[0].clientY;
+      pinchStartDist.current = null;
+    } else if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      pinchStartDist.current = dist;
+      pinchStartScale.current = zoomScale;
+      touchStartX.current = null;
+      touchStartY.current = null;
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchStartDist.current !== null) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const factor = dist / pinchStartDist.current;
+      const newScale = Math.min(Math.max(pinchStartScale.current * factor, 0.6), 3.0);
+      setZoomScale(parseFloat(newScale.toFixed(2)));
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (e.touches.length === 0 && touchStartX.current !== null && touchStartY.current !== null) {
+      const touchEndX = e.changedTouches[0].clientX;
+      const touchEndY = e.changedTouches[0].clientY;
+
+      const diffX = touchEndX - touchStartX.current;
+      const diffY = touchEndY - touchStartY.current;
+
+      // Allow horizontal swipe page turn if swipe distance > 40px and horizontal movement is dominant
+      if (Math.abs(diffX) > 40 && Math.abs(diffX) > Math.abs(diffY) * 1.3 && zoomScale <= 1.3) {
+        if (diffX < 0) {
+          // Swiped Left -> Next page
+          setPageNumber(p => (numPages ? Math.min(p + 1, numPages) : p + 1));
+        } else {
+          // Swiped Right -> Previous page
+          setPageNumber(p => Math.max(p - 1, 1));
+        }
+      }
+    }
+    touchStartX.current = null;
+    touchStartY.current = null;
+    pinchStartDist.current = null;
+  };
+
+  // Keyboard navigation & zoom shortcuts
+  useEffect(() => {
+    if (!activePara) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' || e.key === 'PageDown') {
+        setPageNumber(p => (numPages ? Math.min(p + 1, numPages) : p + 1));
+      } else if (e.key === 'ArrowRight' || e.key === 'PageUp') {
+        setPageNumber(p => Math.max(p - 1, 1));
+      } else if (e.key === '+' || e.key === '=') {
+        setZoomScale(z => Math.min(parseFloat((z + 0.25).toFixed(2)), 3.0));
+      } else if (e.key === '-') {
+        setZoomScale(z => Math.max(parseFloat((z - 0.25).toFixed(2)), 0.6));
+      } else if (e.key === '0') {
+        setZoomScale(1.0);
+      } else if (e.key === 'Escape') {
+        setActivePara(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activePara, numPages]);
 
   // Measure container for responsive PDF
   useEffect(() => {
@@ -260,6 +353,7 @@ export default function QuranReader({ isOnline, showToast, currentUser }: QuranR
         setActivePara(para);
         setPageNumber(bookmarks[para.number] || 1);
         setNumPages(null);
+        setZoomScale(1.0);
         showToast(`📖 Reading Para ${para.number} offline natively!`);
       } else {
         showToast(`❌ Para ${para.number} PDF is not loaded. Please load it first!`);
@@ -644,13 +738,13 @@ export default function QuranReader({ isOnline, showToast, currentUser }: QuranR
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 100 }}
             transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-            className="fixed inset-0 bg-neutral-950 z-50 flex flex-col"
+            className="fixed inset-0 bg-neutral-950 z-[100] flex flex-col"
           >
             {/* Header bar */}
-            <div className="px-4 py-3 border-b border-neutral-800 flex items-center justify-between bg-neutral-900 text-white">
+            <div className="px-4 py-3 border-b border-neutral-800 flex items-center justify-between bg-neutral-900 text-white shrink-0">
               <button
                 onClick={() => setActivePara(null)}
-                className="flex items-center gap-1.5 text-xs font-bold text-neutral-400 hover:text-white transition-colors"
+                className="flex items-center gap-1.5 text-xs font-bold text-neutral-400 hover:text-white transition-colors bg-neutral-800/80 px-2.5 py-1.5 rounded-lg"
               >
                 <ArrowLeft className="w-4 h-4" />
                 Close
@@ -665,63 +759,119 @@ export default function QuranReader({ isOnline, showToast, currentUser }: QuranR
               </div>
 
               {/* Timer indicator */}
-              <div className="text-[10px] font-bold text-purple-400 flex items-center gap-1">
-                <Clock className="w-3 h-3 animate-pulse" />
+              <div className="text-[10px] font-bold text-purple-400 flex items-center gap-1 bg-purple-950/40 px-2.5 py-1.5 rounded-lg border border-purple-800/30">
+                <Clock className="w-3.5 h-3.5 animate-pulse" />
                 <span>⏱ {formatTimeStr(readTimes[activePara.number] || 0)}</span>
               </div>
             </div>
 
-            {/* Sub Info Status Bar */}
-            <div className="px-4 py-2 bg-neutral-950 text-neutral-400 text-[10px] font-bold flex items-center justify-between border-b border-neutral-900 shrink-0 select-none">
-              <span className="text-purple-400 uppercase">File loaded securely from device</span>
+            {/* Sub Info Status & Zoom Control Bar */}
+            <div className="px-4 py-2 bg-neutral-950 text-neutral-300 text-[11px] font-bold flex flex-wrap items-center justify-between gap-2 border-b border-neutral-900 shrink-0 select-none">
               <button 
                 onClick={handleBookmarkCurrentPage}
-                className="flex items-center gap-1 bg-purple-600 hover:bg-purple-500 text-white px-2 py-1 rounded transition-colors"
+                className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white px-2.5 py-1 rounded-lg text-xs transition-all active:scale-95 shadow-sm"
               >
-                <Bookmark className="w-3.5 h-3.5" />
-                Bookmark Page {pageNumber}
+                <Bookmark className="w-3.5 h-3.5 fill-current" />
+                <span>Bookmark Pg {pageNumber}</span>
               </button>
+
+              {/* Zoom Controls Bar */}
+              <div className="flex items-center gap-1.5 bg-neutral-900 border border-neutral-800 p-1 rounded-xl">
+                <button
+                  onClick={() => setZoomScale(z => Math.max(parseFloat((z - 0.2).toFixed(2)), 0.6))}
+                  className="p-1 text-neutral-300 hover:text-white hover:bg-neutral-800 rounded-lg transition-colors"
+                  title="Zoom Out (-)"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+
+                <button
+                  onClick={() => setZoomScale(1.0)}
+                  className="px-2 py-0.5 text-[10px] font-black text-purple-400 hover:text-purple-300 bg-neutral-800 rounded-md transition-colors min-w-[42px] text-center"
+                  title="Reset Zoom to 100%"
+                >
+                  {Math.round(zoomScale * 100)}%
+                </button>
+
+                <button
+                  onClick={() => setZoomScale(z => Math.min(parseFloat((z + 0.2).toFixed(2)), 3.0))}
+                  className="p-1 text-neutral-300 hover:text-white hover:bg-neutral-800 rounded-lg transition-colors"
+                  title="Zoom In (+)"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+
+                {zoomScale !== 1.0 && (
+                  <button
+                    onClick={() => setZoomScale(1.0)}
+                    className="p-1 text-neutral-400 hover:text-amber-400 rounded-lg transition-colors ml-0.5"
+                    title="Reset Zoom"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Native PDF Render Canvas Area */}
-            <div className="flex-1 bg-neutral-900 overflow-hidden relative flex flex-col items-center">
+            {/* Native PDF Render Canvas Area with Touch Gestures */}
+            <div 
+              className="flex-1 bg-neutral-900 overflow-hidden relative flex flex-col items-center justify-between"
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+            >
+              {/* Swipe Hint Banner */}
+              <div className="absolute top-2 z-10 bg-black/60 backdrop-blur-md text-white/80 text-[10px] font-semibold px-3 py-1 rounded-full border border-white/10 pointer-events-none select-none">
+                👈 Swipe Left / Right to Turn Pages 👉
+              </div>
+
+              {/* Scrollable PDF Container */}
               <div 
                 ref={containerRef}
-                className="flex-1 w-full max-w-3xl overflow-y-auto bg-neutral-900 flex justify-center pb-8 pt-4 custom-scrollbar"
+                className="flex-1 w-full max-w-4xl overflow-auto bg-neutral-900 flex justify-center items-start pb-8 pt-10 custom-scrollbar"
               >
                 <Document
                   file={activeBlobUrl}
                   onLoadSuccess={({ numPages }) => setNumPages(numPages)}
-                  loading={<div className="text-purple-400 text-sm font-bold mt-10 animate-pulse">Loading PDF...</div>}
+                  loading={<div className="text-purple-400 text-sm font-bold mt-16 animate-pulse">Loading PDF...</div>}
                 >
                   <Page
                     pageNumber={pageNumber}
-                    width={containerWidth ? Math.min(containerWidth - 32, 800) : 300}
-                    className="shadow-2xl rounded-sm overflow-hidden"
+                    width={containerWidth ? Math.min(containerWidth - 24, 800) * zoomScale : 300 * zoomScale}
+                    className="shadow-2xl rounded-sm overflow-hidden my-auto"
                     renderTextLayer={false}
                     renderAnnotationLayer={false}
                   />
                 </Document>
               </div>
 
-              {/* Pagination Controls (RTL layout) */}
-              <div className="w-full max-w-3xl flex items-center justify-between bg-neutral-950 p-4 border-t border-neutral-800 shrink-0 shadow-lg">
+              {/* Pagination Controls */}
+              <div className="w-full max-w-3xl flex items-center justify-between bg-neutral-950 p-3.5 border-t border-neutral-800 shrink-0 shadow-2xl z-20">
                 <button 
                   disabled={numPages ? pageNumber >= numPages : false} 
                   onClick={() => setPageNumber(p => p + 1)}
-                  className="p-3 bg-neutral-800 text-white rounded-full disabled:opacity-50 hover:bg-neutral-700 active:scale-95 transition-all"
+                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl disabled:opacity-30 active:scale-95 transition-all flex items-center gap-1 text-xs font-bold"
+                  title="Next Page (Swipe Left)"
                 >
-                  <ChevronLeft className="w-5 h-5" />
+                  <ChevronLeft className="w-5 h-5 text-purple-400" />
+                  <span>Next</span>
                 </button>
-                <span className="text-white font-bold text-sm tracking-wider">
-                  PAGE {pageNumber} {numPages ? <span className="text-neutral-500">/ {numPages}</span> : ''}
-                </span>
+
+                <div className="flex flex-col items-center">
+                  <span className="text-white font-extrabold text-sm tracking-wider">
+                    PAGE {pageNumber} {numPages ? <span className="text-neutral-500">/ {numPages}</span> : ''}
+                  </span>
+                  <span className="text-[9px] text-neutral-400 font-medium">Swipe screen to navigate</span>
+                </div>
+
                 <button 
                   disabled={pageNumber <= 1} 
                   onClick={() => setPageNumber(p => p - 1)}
-                  className="p-3 bg-neutral-800 text-white rounded-full disabled:opacity-50 hover:bg-neutral-700 active:scale-95 transition-all"
+                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl disabled:opacity-30 active:scale-95 transition-all flex items-center gap-1 text-xs font-bold"
+                  title="Previous Page (Swipe Right)"
                 >
-                  <ChevronRight className="w-5 h-5" />
+                  <span>Prev</span>
+                  <ChevronRight className="w-5 h-5 text-purple-400" />
                 </button>
               </div>
             </div>
