@@ -5,6 +5,8 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   onAuthStateChanged,
   updateProfile,
@@ -13,6 +15,7 @@ import {
 } from 'firebase/auth';
 import { 
   getFirestore, 
+  setLogLevel,
   doc, 
   setDoc, 
   getDoc, 
@@ -34,6 +37,7 @@ let googleProvider: any;
 
 if (isFirebaseConfigured) {
   try {
+    setLogLevel('silent');
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     auth = getAuth(app);
     // Support named Firestore database if specified in config
@@ -45,6 +49,13 @@ if (isFirebaseConfigured) {
     }
     googleProvider = new GoogleAuthProvider();
     googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+    // Handle redirect result if redirected from Google Auth
+    getRedirectResult(auth).then((result) => {
+      if (result?.user) {
+        saveUserProfile(result.user);
+      }
+    }).catch(() => {});
   } catch (error) {
     console.error('Firebase initialization error:', error);
   }
@@ -73,9 +84,21 @@ export async function signInWithEmail(email: string, pass: string) {
 
 export async function signInWithGoogle() {
   if (!auth || !googleProvider) throw new Error('Firebase Auth is not initialized');
-  const cred = await signInWithPopup(auth, googleProvider);
-  await saveUserProfile(cred.user);
-  return cred.user;
+  try {
+    const cred = await signInWithPopup(auth, googleProvider);
+    await saveUserProfile(cred.user);
+    return cred.user;
+  } catch (error: any) {
+    if (error?.code === 'auth/popup-blocked' || error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
+      try {
+        await signInWithRedirect(auth, googleProvider);
+        return null;
+      } catch (redirectErr) {
+        throw error;
+      }
+    }
+    throw error;
+  }
 }
 
 export async function signOutUser() {

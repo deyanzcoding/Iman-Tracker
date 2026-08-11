@@ -1,38 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  User as UserIcon, 
-  Mail, 
-  Lock, 
-  LogOut, 
   ShieldCheck, 
   FileText, 
   CloudCheck, 
   X, 
-  Eye, 
-  EyeOff, 
-  Plus, 
   Trash2,
-  Calendar,
   CheckCircle2,
-  Upload,
-  UserPlus,
-  LogIn,
+  LogOut,
   Camera,
   Edit3,
   AlertTriangle,
-  Sparkles,
-  Check
+  Check,
+  Sparkles
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { 
-  signUpWithEmail, 
-  signInWithEmail, 
   signInWithGoogle, 
   signOutUser, 
   getUserFilesMetadata, 
   deleteUserFileMetadata, 
-  saveUserFileMetadata,
   updateUserProfileDetails,
   deleteUserAccount,
   FileMetadataRecord 
@@ -54,11 +41,6 @@ const AVATAR_PRESETS = [
 ];
 
 export default function AuthModal({ isOpen, onClose, currentUser, showToast }: AuthModalProps) {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -133,63 +115,22 @@ export default function AuthModal({ isOpen, onClose, currentUser, showToast }: A
     }
   };
 
-  const handleAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-
-    try {
-      if (mode === 'signup') {
-        if (!email || !password || !displayName) {
-          setError('Please fill in all fields');
-          setLoading(false);
-          return;
-        }
-        await signUpWithEmail(email, password, displayName);
-        showToast(`Welcome, ${displayName}! Account created successfully 🎉`);
-      } else {
-        if (!email || !password) {
-          setError('Please enter both email and password');
-          setLoading(false);
-          return;
-        }
-        await signInWithEmail(email, password);
-        showToast('Logged in successfully! Welcome back 👋');
-      }
-      setEmail('');
-      setPassword('');
-      setDisplayName('');
-      onClose();
-    } catch (err: any) {
-      console.error(err);
-      let errMsg = 'Authentication failed. Please check your details.';
-      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
-        errMsg = 'Invalid email or password.';
-      } else if (err.code === 'auth/email-already-in-use') {
-        errMsg = 'An account with this email already exists.';
-      } else if (err.code === 'auth/weak-password') {
-        errMsg = 'Password should be at least 6 characters.';
-      } else if (err.code === 'auth/operation-not-allowed') {
-        errMsg = 'Email/Password sign-in is currently disabled in Firebase Console. Please enable "Email/Password" under Firebase Console > Authentication > Sign-in method.';
-      } else if (err.message) {
-        errMsg = err.message;
-      }
-      setError(errMsg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleGoogleSignIn = async () => {
     setError(null);
     setLoading(true);
     try {
-      await signInWithGoogle();
-      showToast('Logged in with Google successfully!');
-      onClose();
+      const user = await signInWithGoogle();
+      if (user) {
+        showToast('Logged in with Google successfully!');
+        onClose();
+      } else {
+        showToast('Redirecting to Google for authentication...');
+      }
     } catch (err: any) {
       console.error(err);
-      if (err.code === 'auth/operation-not-allowed') {
+      if (err.code === 'auth/popup-blocked') {
+        setError('Popup was blocked by your browser. Attempting redirect or please open the app in a new browser tab.');
+      } else if (err.code === 'auth/operation-not-allowed') {
         setError('Google Sign-in is currently disabled in your Firebase Console. Please enable "Google" under Firebase Console > Authentication > Sign-in method.');
       } else {
         setError(err.message || 'Google sign-in failed');
@@ -241,10 +182,10 @@ export default function AuthModal({ isOpen, onClose, currentUser, showToast }: A
               </div>
               <div>
                 <h3 className="text-base font-extrabold text-[var(--text)] leading-tight">
-                  {currentUser ? 'User Account & Security' : mode === 'signin' ? 'Sign In to Account' : 'Create New Account'}
+                  {currentUser ? 'User Account & Security' : 'Sign In to Account'}
                 </h3>
                 <p className="text-[11px] font-medium text-[var(--text3)]">
-                  {currentUser ? 'Manage cloud profile & stored files' : 'Sync your data securely across all devices'}
+                  {currentUser ? 'Manage cloud profile & stored files' : 'Sync your data securely with Google'}
                 </p>
               </div>
             </div>
@@ -479,28 +420,17 @@ export default function AuthModal({ isOpen, onClose, currentUser, showToast }: A
                 )}
               </div>
             ) : (
-              /* AUTH FORM (SIGN IN / SIGN UP) */
-              <div className="flex flex-col gap-4">
-                {/* Mode Selector Tabs */}
-                <div className="flex p-1 bg-[var(--surface2)] rounded-2xl border border-[var(--border2)]">
-                  <button
-                    type="button"
-                    onClick={() => { setMode('signin'); setError(null); }}
-                    className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                      mode === 'signin' ? 'bg-[var(--surface)] text-[var(--text)] shadow-sm' : 'text-[var(--text3)]'
-                    }`}
-                  >
-                    <LogIn className="w-3.5 h-3.5" /> Sign In
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setMode('signup'); setError(null); }}
-                    className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                      mode === 'signup' ? 'bg-[var(--surface)] text-[var(--text)] shadow-sm' : 'text-[var(--text3)]'
-                    }`}
-                  >
-                    <UserPlus className="w-3.5 h-3.5" /> Create Account
-                  </button>
+              /* ONLY GOOGLE SIGN IN VIEW */
+              <div className="flex flex-col gap-5 py-2">
+                {/* Visual Banner */}
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-brand-500/10 via-purple-500/5 to-emerald-500/10 border border-brand-500/20 flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-brand-600 dark:text-brand-400 font-extrabold text-xs">
+                    <Sparkles className="w-4 h-4" />
+                    <span>Cloud Backup & Multi-device Sync</span>
+                  </div>
+                  <p className="text-xs text-[var(--text2)] leading-relaxed font-medium">
+                    Sign in with your Google Account to automatically sync your daily Namaz logs, Zikar counters, and Quran reading progress across all your devices.
+                  </p>
                 </div>
 
                 {error && (
@@ -509,102 +439,14 @@ export default function AuthModal({ isOpen, onClose, currentUser, showToast }: A
                   </div>
                 )}
 
-                <form onSubmit={handleAuthSubmit} className="flex flex-col gap-3">
-                  {mode === 'signup' && (
-                    <div>
-                      <label className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text3)] block mb-1">
-                        Full Name
-                      </label>
-                      <div className="relative flex items-center">
-                        <UserIcon className="w-4 h-4 text-[var(--text3)] absolute left-3.5 pointer-events-none" />
-                        <input
-                          type="text"
-                          required
-                          value={displayName}
-                          onChange={(e) => setDisplayName(e.target.value)}
-                          placeholder="e.g. Ahmad Khan"
-                          className="w-full pl-10 pr-4 py-2.5 bg-[var(--surface2)] border border-[var(--border2)] rounded-xl text-xs font-medium text-[var(--text)] outline-none focus:border-brand-500 transition-colors"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text3)] block mb-1">
-                      Email Address
-                    </label>
-                    <div className="relative flex items-center">
-                      <Mail className="w-4 h-4 text-[var(--text3)] absolute left-3.5 pointer-events-none" />
-                      <input
-                        type="email"
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="your.email@example.com"
-                        className="w-full pl-10 pr-4 py-2.5 bg-[var(--surface2)] border border-[var(--border2)] rounded-xl text-xs font-medium text-[var(--text)] outline-none focus:border-brand-500 transition-colors"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text3)] block mb-1">
-                      Password
-                    </label>
-                    <div className="relative flex items-center">
-                      <Lock className="w-4 h-4 text-[var(--text3)] absolute left-3.5 pointer-events-none" />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        required
-                        minLength={6}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full pl-10 pr-10 py-2.5 bg-[var(--surface2)] border border-[var(--border2)] rounded-xl text-xs font-medium text-[var(--text)] outline-none focus:border-brand-500 transition-colors"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 text-[var(--text3)] hover:text-[var(--text)]"
-                      >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full py-3 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl shadow-md transition-all active:scale-95 mt-2 flex items-center justify-center gap-2"
-                  >
-                    {loading ? (
-                      <span>Processing...</span>
-                    ) : mode === 'signin' ? (
-                      <>
-                        <LogIn className="w-4 h-4" />
-                        <span>Sign In</span>
-                      </>
-                    ) : (
-                      <>
-                        <UserPlus className="w-4 h-4" />
-                        <span>Create Account</span>
-                      </>
-                    )}
-                  </button>
-                </form>
-
-                <div className="relative flex py-1 items-center">
-                  <div className="flex-grow border-t border-[var(--border2)]"></div>
-                  <span className="flex-shrink mx-3 text-[10px] font-bold uppercase tracking-wider text-[var(--text3)]">OR</span>
-                  <div className="flex-grow border-t border-[var(--border2)]"></div>
-                </div>
-
+                {/* Single Primary Google Sign In Button */}
                 <button
                   type="button"
                   onClick={handleGoogleSignIn}
                   disabled={loading}
-                  className="w-full py-2.5 bg-[var(--surface2)] hover:bg-[var(--surface2)]/80 border border-[var(--border2)] text-[var(--text)] font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 active:scale-95"
+                  className="w-full py-3.5 px-4 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-800 dark:text-neutral-100 font-extrabold text-xs rounded-2xl border-2 border-neutral-200 dark:border-neutral-700 shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
                 >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
                     <path
                       fill="#4285F4"
                       d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -622,8 +464,12 @@ export default function AuthModal({ isOpen, onClose, currentUser, showToast }: A
                       d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                     />
                   </svg>
-                  <span>Continue with Google</span>
+                  <span className="text-sm font-extrabold">{loading ? 'Connecting...' : 'Continue with Google'}</span>
                 </button>
+
+                <p className="text-[10px] text-center text-[var(--text3)] font-medium px-4">
+                  By continuing, your authentication is handled securely through Google Firebase Auth.
+                </p>
               </div>
             )}
           </div>
@@ -632,3 +478,4 @@ export default function AuthModal({ isOpen, onClose, currentUser, showToast }: A
     </AnimatePresence>
   );
 }
+

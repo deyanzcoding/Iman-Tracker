@@ -463,11 +463,24 @@ export default function QuranReader({ isOnline, showToast, currentUser, onReadin
   // Delete a loaded para
   const handleDeletePara = async (paraNum: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm(`Are you sure you want to delete the cached PDF for Para ${paraNum}?`)) {
+    if (confirm(`Are you sure you want to remove Para ${paraNum} from storage?`)) {
       await deletePdf(paraNum);
       const updated = await getAllLoadedParaNumbers();
       setLoadedParaNumbers(updated);
-      showToast(`🗑️ Deleted Para ${paraNum} from storage.`);
+      showToast(`🗑️ Removed Para ${paraNum} from storage.`);
+    }
+  };
+
+  // Delete all loaded paras
+  const handleClearAllParas = async () => {
+    if (loadedParaNumbers.length === 0) return;
+    if (confirm(`Are you sure you want to remove ALL ${loadedParaNumbers.length} loaded Paras from storage?`)) {
+      for (const num of loadedParaNumbers) {
+        await deletePdf(num);
+      }
+      const updated = await getAllLoadedParaNumbers();
+      setLoadedParaNumbers(updated);
+      showToast("🗑️ All loaded Paras removed from storage.");
     }
   };
 
@@ -538,10 +551,10 @@ export default function QuranReader({ isOnline, showToast, currentUser, onReadin
           />
         </div>
         <label 
-          className="p-3 rounded-[20px] border border-[var(--border2)] bg-[var(--surface)] text-[var(--text)] hover:border-purple-500/50 cursor-pointer shrink-0 transition-colors flex items-center justify-center active:scale-95" 
+          className="p-2.5 rounded-2xl border border-[var(--border2)] bg-[var(--surface)] text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 hover:border-purple-500/40 cursor-pointer shrink-0 transition-all flex items-center justify-center active:scale-95 shadow-xs" 
           title="Upload Para PDFs"
         >
-          <Upload className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+          <Upload className="w-4 h-4" />
           <input 
             type="file" 
             multiple 
@@ -550,24 +563,37 @@ export default function QuranReader({ isOnline, showToast, currentUser, onReadin
             className="hidden" 
           />
         </label>
+        {/* Bookmark Button */}
         <button
           onClick={() => setShowBookmarks(!showBookmarks)}
-          className={`p-3 rounded-[20px] border shrink-0 transition-all active:scale-95 flex items-center gap-1.5 ${
+          className={`p-2.5 rounded-2xl border shrink-0 transition-all active:scale-95 flex items-center gap-1.5 shadow-xs ${
             showBookmarks 
-              ? 'bg-purple-600 border-purple-600 text-white shadow-md' 
-              : 'bg-[var(--surface)] border-[var(--border2)] text-[var(--text)]'
+              ? 'bg-purple-600 border-purple-600 text-white shadow-sm' 
+              : 'bg-[var(--surface)] border-[var(--border2)] text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 hover:border-purple-500/40'
           }`}
           title="Saved Bookmarks"
         >
-          <Bookmark className="w-5 h-5 fill-current" />
+          <Bookmark className="w-4 h-4 fill-current" />
           {Object.keys(bookmarks).length > 0 && (
-            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+            <span className={`text-[9px] font-black px-1.5 py-0.2 rounded-full ${
               showBookmarks ? 'bg-purple-800 text-purple-100' : 'bg-purple-500 text-white'
             }`}>
               {Object.keys(bookmarks).length}
             </span>
           )}
         </button>
+
+        {/* Download all Quran Paras from Google Drive (Right side of Bookmark icon) */}
+        <a
+          href="https://drive.google.com/drive/folders/1kcIia5HHQhJ0KTioSzt0F8sESB03Ik5z?usp=drive_link"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-2.5 rounded-2xl border border-[var(--border2)] bg-[var(--surface)] text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 hover:border-purple-500/40 shrink-0 transition-all active:scale-95 flex items-center gap-1.5 font-bold text-xs shadow-xs"
+          title="Download all Quran Paras from Google Drive"
+        >
+          <FileDown className="w-4 h-4" />
+          <span className="hidden sm:inline">Download Paras</span>
+        </a>
       </div>
 
       {/* Redesigned Bookmarks Section */}
@@ -646,16 +672,29 @@ export default function QuranReader({ isOnline, showToast, currentUser, onReadin
         </div>
       )}
 
-      {/* Grid Legend */}
+      {/* Grid Legend & Mass Action */}
       <div className="flex items-center justify-between text-[10px] font-bold text-[var(--text3)] uppercase px-1">
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-purple-500" />
-          <span>Loaded</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-purple-500" />
+            <span>Loaded ({loadedParaNumbers.length}/30)</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-neutral-300 dark:bg-neutral-700" />
+            <span>Not Loaded</span>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-neutral-300 dark:bg-neutral-700" />
-          <span>Not Loaded</span>
-        </div>
+
+        {loadedParaNumbers.length > 0 && (
+          <button
+            onClick={handleClearAllParas}
+            className="text-[10px] font-bold text-red-500 hover:text-red-600 flex items-center gap-1 bg-red-500/10 hover:bg-red-500/20 px-2 py-0.5 rounded-lg transition-colors capitalize normal-case"
+            title="Remove all loaded Paras from storage"
+          >
+            <Trash2 className="w-3 h-3" />
+            <span>Remove All</span>
+          </button>
+        )}
       </div>
 
       {/* Elegant 3-column Grid for 30 Paras */}
@@ -698,16 +737,17 @@ export default function QuranReader({ isOnline, showToast, currentUser, onReadin
               <div className="w-full mt-2 pt-2 border-t border-[var(--border)] flex items-center justify-center">
                 {isLoaded ? (
                   <div className="flex items-center justify-between w-full text-[9px] font-bold text-[var(--text2)] px-0.5">
-                    <span className="flex items-center gap-0.5 opacity-80">
+                    <span className="flex items-center gap-0.5 opacity-80" title="Reading duration">
                       ⏱ {formatTimeStr(readSecs)}
                     </span>
                     
-                    {/* Delete file button on click */}
+                    {/* Delete file button on click (Always visible for easy removal) */}
                     <button 
                       onClick={(e) => handleDeletePara(para.number, e)}
-                      className="text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded-md hover:bg-red-50 dark:hover:bg-red-950/20"
+                      className="text-red-500 hover:text-red-700 p-1 rounded-md hover:bg-red-500/10 transition-colors flex items-center"
+                      title={`Remove loaded Para ${para.number}`}
                     >
-                      <Trash2 className="w-3 h-3" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 ) : (
