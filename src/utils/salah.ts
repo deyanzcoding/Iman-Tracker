@@ -163,9 +163,95 @@ export async function fetchTimingsByCity(city: string, country: string = ''): Pr
 }
 
 /**
+ * Global Web Audio Context reference for mobile playback
+ */
+let globalAudioCtx: AudioContext | null = null;
+
+export function unlockAudioContext(): void {
+  try {
+    if (!globalAudioCtx) {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        globalAudioCtx = new AudioContextClass();
+      }
+    }
+    if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+      globalAudioCtx.resume();
+    }
+  } catch (e) {
+    console.warn('Failed to unlock audio context:', e);
+  }
+}
+
+/**
+ * Automatically unlock Web Audio API on first user tap/click on mobile screen
+ */
+export function initAudioUnlockListener(): void {
+  if (typeof window === 'undefined') return;
+  const handleInteraction = () => {
+    unlockAudioContext();
+    window.removeEventListener('click', handleInteraction);
+    window.removeEventListener('touchstart', handleInteraction);
+    window.removeEventListener('keydown', handleInteraction);
+  };
+  window.addEventListener('click', handleInteraction, { passive: true });
+  window.addEventListener('touchstart', handleInteraction, { passive: true });
+  window.addEventListener('keydown', handleInteraction, { passive: true });
+}
+
+/**
+ * Play a soothing, harmonic Islamic Prayer Chime / Alarm sound
+ */
+export function playSalahAlarmSound(): void {
+  try {
+    unlockAudioContext();
+    if (!globalAudioCtx) return;
+
+    // Harmonious Islamic prayer chime sequence (E4, A4, B4, E5) with resonance
+    const notes = [
+      { freq: 329.63, duration: 0.6, delay: 0 },
+      { freq: 440.00, duration: 0.8, delay: 0.5 },
+      { freq: 493.88, duration: 0.8, delay: 1.1 },
+      { freq: 659.25, duration: 1.4, delay: 1.7 }
+    ];
+
+    const now = globalAudioCtx.currentTime;
+
+    notes.forEach((note) => {
+      const osc = globalAudioCtx!.createOscillator();
+      const gain = globalAudioCtx!.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(note.freq, now + note.delay);
+
+      // Smooth envelope for gentle chime
+      gain.gain.setValueAtTime(0, now + note.delay);
+      gain.gain.linearRampToValueAtTime(0.35, now + note.delay + 0.06);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + note.delay + note.duration);
+
+      osc.connect(gain);
+      gain.connect(globalAudioCtx!.destination);
+
+      osc.start(now + note.delay);
+      osc.stop(now + note.delay + note.duration);
+    });
+
+    // Mobile vibration if supported
+    if ('vibrate' in navigator) {
+      navigator.vibrate([300, 200, 300, 200, 500]);
+    }
+  } catch (e) {
+    console.error('Error playing alarm sound:', e);
+  }
+}
+
+/**
  * Request Browser Notification Permission
  */
 export async function requestNotificationPermission(): Promise<boolean> {
+  // Always unlock audio when user interacts with permission
+  unlockAudioContext();
+
   if (!('Notification' in window)) {
     return false;
   }
@@ -180,9 +266,12 @@ export async function requestNotificationPermission(): Promise<boolean> {
 }
 
 /**
- * Trigger Browser Notification for Salah
+ * Trigger Browser Notification and Audio Alarm for Salah
  */
 export function sendSalahNotification(prayerName: string, leadMinutes: number): void {
+  // Play audio chime alarm regardless of native notification permissions (useful for PWA)
+  playSalahAlarmSound();
+
   if (!('Notification' in window) || Notification.permission !== 'granted') {
     return;
   }

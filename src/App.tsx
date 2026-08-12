@@ -19,7 +19,7 @@ import { Home, BookOpen, Book, BarChart2, BarChart3, Activity, Settings as Setti
 import appLogo from './assets/images/favicon_1784528732122.jpg';
 import { User } from 'firebase/auth';
 import { subscribeToAuthChanges, getUserAppData, saveUserAppData } from './utils/firebase';
-import { getStoredSalahSettings, sendSalahNotification, SalahSettings } from './utils/salah';
+import { getStoredSalahSettings, sendSalahNotification, initAudioUnlockListener, SalahSettings } from './utils/salah';
 
 export default function App() {
   // ─── LOCAL STORAGE PERSISTENCE LAZY INITIALIZER ───
@@ -636,6 +636,9 @@ export default function App() {
   const notifiedPrayersRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
+    // Automatically attach audio context unlocker on first tap for mobile PWA audio support
+    initAudioUnlockListener();
+
     const checkSalahAlerts = () => {
       const settings = getStoredSalahSettings();
       if (!settings.enabled || !settings.timings) return;
