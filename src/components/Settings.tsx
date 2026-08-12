@@ -298,27 +298,6 @@ export default function Settings({
               Clear Data
             </button>
           </div>
-
-          {currentUser && (
-            <div className="pt-3 border-t border-[var(--border)] flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-red-500/15 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
-                  <Trash2 className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-red-600 dark:text-red-400">Delete Account</div>
-                  <div className="text-[10px] font-medium text-[var(--text3)]">Remove user identity & all Firestore records</div>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="py-2 px-3 rounded-xl text-xs font-extrabold text-white bg-red-600 hover:bg-red-700 shadow-sm transition-all active:scale-95 shrink-0 flex items-center gap-1"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete Account</span>
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
