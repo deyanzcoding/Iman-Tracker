@@ -265,33 +265,27 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return false;
 }
 
+import { sendIslamicNotification, getRandomMotivation } from './reminders';
+
 /**
- * Trigger Browser Notification and Audio Alarm for Salah
+ * Trigger Browser Notification, Audio Alarm, and In-App Banner for Salah
  */
 export function sendSalahNotification(prayerName: string, leadMinutes: number): void {
-  // Play audio chime alarm regardless of native notification permissions (useful for PWA)
-  playSalahAlarmSound();
-
-  if (!('Notification' in window) || Notification.permission !== 'granted') {
-    return;
-  }
-
   const title = leadMinutes === 0
     ? `🕌 Time for ${prayerName} Prayer`
     : `🕌 ${prayerName} Prayer in ${leadMinutes} Minutes`;
 
   const body = leadMinutes === 0
-    ? `It is now time for ${prayerName}. Take a moment to offer your Namaz and log your progress in Iman Tracker. 🤲`
+    ? `It is now time for ${prayerName}. Take a moment to offer your Namaz and log your progress. 🤲`
     : `${prayerName} prayer time is approaching in ${leadMinutes} minutes. Prepare for wudu and prayer. 🤲`;
 
-  try {
-    new Notification(title, {
-      body,
-      icon: '/favicon.ico',
-      badge: '/favicon.ico',
-      tag: `salah-${prayerName}-${Date.now()}`
-    });
-  } catch (e) {
-    console.error('Failed to trigger notification', e);
-  }
+  const quote = getRandomMotivation('namaz');
+
+  sendIslamicNotification({
+    type: 'namaz',
+    title,
+    body,
+    quote,
+    tab: 'namaz'
+  });
 }

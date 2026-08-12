@@ -15,11 +15,13 @@ import Settings from './components/Settings';
 import BottomSheet from './components/BottomSheet';
 import ConfirmDialog from './components/ConfirmDialog';
 import AuthModal from './components/AuthModal';
+import IslamicBannerAlert from './components/IslamicBannerAlert';
 import { Home, BookOpen, Book, BarChart2, BarChart3, Activity, Settings as SettingsIcon, User as UserIcon, ShieldCheck, CheckCircle2, Edit3 } from 'lucide-react';
 import appLogo from './assets/images/favicon_1784528732122.jpg';
 import { User } from 'firebase/auth';
 import { subscribeToAuthChanges, getUserAppData, saveUserAppData } from './utils/firebase';
 import { getStoredSalahSettings, sendSalahNotification, initAudioUnlockListener, SalahSettings } from './utils/salah';
+import { getStoredZikarSettings, getStoredQuranSettings, sendIslamicNotification, getRandomMotivation } from './utils/reminders';
 
 export default function App() {
   // ─── LOCAL STORAGE PERSISTENCE LAZY INITIALIZER ───
@@ -632,53 +634,91 @@ export default function App() {
     showToast(`🎯 Monthly goal targets updated`);
   };
 
-  // ─── SALAH TIME BACKGROUND ALERTS SCHEDULER ───
-  const notifiedPrayersRef = useRef<Set<string>>(new Set());
+  // ─── ISLAMIC BACKGROUND ALERTS SCHEDULER (NAMAZ, ZIKAR, QURAN) ───
+  const notifiedAlertsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     // Automatically attach audio context unlocker on first tap for mobile PWA audio support
     initAudioUnlockListener();
 
-    const checkSalahAlerts = () => {
-      const settings = getStoredSalahSettings();
-      if (!settings.enabled || !settings.timings) return;
-
+    const checkIslamicAlerts = () => {
       const now = new Date();
       const currentHM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       const todayStr = today();
 
-      const prayers = [
-        { name: 'Fajr', time: settings.timings.Fajr },
-        { name: 'Dhuhr', time: settings.timings.Dhuhr },
-        { name: 'Asr', time: settings.timings.Asr },
-        { name: 'Maghrib', time: settings.timings.Maghrib },
-        { name: 'Isha', time: settings.timings.Isha }
-      ];
+      // 1. SALAH PRAYER ALERTS
+      const settings = getStoredSalahSettings();
+      if (settings.enabled && settings.timings) {
+        const prayers = [
+          { name: 'Fajr', time: settings.timings.Fajr },
+          { name: 'Dhuhr', time: settings.timings.Dhuhr },
+          { name: 'Asr', time: settings.timings.Asr },
+          { name: 'Maghrib', time: settings.timings.Maghrib },
+          { name: 'Isha', time: settings.timings.Isha }
+        ];
 
-      prayers.forEach((p) => {
-        if (!p.time) return;
-        const parts = p.time.split(':');
-        if (parts.length < 2) return;
-        const pH = parseInt(parts[0], 10);
-        const pM = parseInt(parts[1], 10);
-        if (isNaN(pH) || isNaN(pM)) return;
+        prayers.forEach((p) => {
+          if (!p.time) return;
+          const parts = p.time.split(':');
+          if (parts.length < 2) return;
+          const pH = parseInt(parts[0], 10);
+          const pM = parseInt(parts[1], 10);
+          if (isNaN(pH) || isNaN(pM)) return;
 
-        const targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), pH, pM, 0, 0);
-        targetDate.setMinutes(targetDate.getMinutes() - (settings.leadMinutes || 0));
+          const targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), pH, pM, 0, 0);
+          targetDate.setMinutes(targetDate.getMinutes() - (settings.leadMinutes || 0));
 
-        const targetHM = `${String(targetDate.getHours()).padStart(2, '0')}:${String(targetDate.getMinutes()).padStart(2, '0')}`;
-        const key = `${todayStr}-${p.name}-${targetHM}`;
+          const targetHM = `${String(targetDate.getHours()).padStart(2, '0')}:${String(targetDate.getMinutes()).padStart(2, '0')}`;
+          const key = `namaz-${todayStr}-${p.name}-${targetHM}`;
 
-        if (currentHM === targetHM && !notifiedPrayersRef.current.has(key)) {
-          notifiedPrayersRef.current.add(key);
-          sendSalahNotification(p.name, settings.leadMinutes || 0);
-          showToast(`🕌 ${p.name} prayer time alert (${settings.leadMinutes || 0}m lead)`);
-        }
-      });
+          if (currentHM === targetHM && !notifiedAlertsRef.current.has(key)) {
+            notifiedAlertsRef.current.add(key);
+            sendSalahNotification(p.name, settings.leadMinutes || 0);
+          }
+        });
+      }
+
+      // 2. ZIKAR REMINDERS
+      const zikarSettings = getStoredZikarSettings();
+      if (zikarSettings.enabled && Array.isArray(zikarSettings.items)) {
+        zikarSettings.items.forEach((item) => {
+          if (!item.enabled || !item.time) return;
+          const key = `zikar-${item.id}-${todayStr}-${item.time}`;
+          if (currentHM === item.time && !notifiedAlertsRef.current.has(key)) {
+            notifiedAlertsRef.current.add(key);
+            sendIslamicNotification({
+              type: 'zikar',
+              title: `📿 ${item.name} Reminder`,
+              body: `Time for your Zikar: ${item.name}. Take a moment to remember Allah (SWT).`,
+              quote: getRandomMotivation('zikar'),
+              tab: 'dua'
+            });
+          }
+        });
+      }
+
+      // 3. QURAN REMINDERS
+      const quranSettings = getStoredQuranSettings();
+      if (quranSettings.enabled && Array.isArray(quranSettings.items)) {
+        quranSettings.items.forEach((item) => {
+          if (!item.enabled || !item.time) return;
+          const key = `quran-${item.id}-${todayStr}-${item.time}`;
+          if (currentHM === item.time && !notifiedAlertsRef.current.has(key)) {
+            notifiedAlertsRef.current.add(key);
+            sendIslamicNotification({
+              type: 'quran',
+              title: `📖 ${item.name} Reminder`,
+              body: `Time for your Quran recitation: ${item.name}.`,
+              quote: getRandomMotivation('quran'),
+              tab: 'quran'
+            });
+          }
+        });
+      }
     };
 
-    checkSalahAlerts();
-    const interval = setInterval(checkSalahAlerts, 20000);
+    checkIslamicAlerts();
+    const interval = setInterval(checkIslamicAlerts, 20000);
     return () => clearInterval(interval);
   }, [showToast]);
 
