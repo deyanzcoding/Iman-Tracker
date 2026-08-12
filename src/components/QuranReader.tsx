@@ -204,6 +204,76 @@ export default function QuranReader({ isOnline, showToast, currentUser, onReadin
     }
   };
 
+  // Next Page Handler with Auto-Advance to Next Para
+  const handleGoNextPage = async () => {
+    if (!activePara) return;
+    if (numPages && pageNumber >= numPages) {
+      // Reached the end of current Para -> Auto advance to next Para
+      const nextParaNum = activePara.number + 1;
+      if (nextParaNum > 30) {
+        showToast("🎉 MashaAllah! You have completed the entire Quran (Para 30)!");
+        return;
+      }
+      const isLoaded = loadedParaNumbers.includes(nextParaNum);
+      if (isLoaded) {
+        const nextParaObj = PARAS_DATA.find(p => p.number === nextParaNum);
+        if (nextParaObj) {
+          try {
+            const blob = await getPdf(nextParaNum);
+            if (blob) {
+              const url = URL.createObjectURL(blob);
+              if (activeBlobUrl) URL.revokeObjectURL(activeBlobUrl);
+              setActiveBlobUrl(url);
+              setActivePara(nextParaObj);
+              setPageNumber(bookmarks[nextParaNum] || 1);
+              setNumPages(null);
+              showToast(`✨ Starting Para ${nextParaNum}: ${nextParaObj.name} (${nextParaObj.arabicName})`);
+            }
+          } catch (err) {
+            console.error(err);
+            showToast(`❌ Error opening Para ${nextParaNum}`);
+          }
+        }
+      } else {
+        showToast(`⚠️ Para ${nextParaNum} is not loaded yet. Please load Para ${nextParaNum} to continue.`);
+      }
+    } else {
+      setPageNumber(p => p + 1);
+    }
+  };
+
+  // Previous Page Handler with Option to Go Back to Previous Para
+  const handleGoPrevPage = async () => {
+    if (!activePara) return;
+    if (pageNumber <= 1) {
+      const prevParaNum = activePara.number - 1;
+      if (prevParaNum >= 1) {
+        const isLoaded = loadedParaNumbers.includes(prevParaNum);
+        if (isLoaded) {
+          const prevParaObj = PARAS_DATA.find(p => p.number === prevParaNum);
+          if (prevParaObj) {
+            try {
+              const blob = await getPdf(prevParaNum);
+              if (blob) {
+                const url = URL.createObjectURL(blob);
+                if (activeBlobUrl) URL.revokeObjectURL(activeBlobUrl);
+                setActiveBlobUrl(url);
+                setActivePara(prevParaObj);
+                setPageNumber(1);
+                setNumPages(null);
+                showToast(`⬅️ Returned to Para ${prevParaNum}: ${prevParaObj.name}`);
+              }
+            } catch (err) {
+              console.error(err);
+            }
+          }
+        }
+      }
+    } else {
+      setPageNumber(p => p - 1);
+    }
+  };
+
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (e.touches.length === 0 && touchStartX.current !== null && touchStartY.current !== null) {
       const touchEndX = e.changedTouches[0].clientX;
@@ -214,12 +284,12 @@ export default function QuranReader({ isOnline, showToast, currentUser, onReadin
 
       // Allow horizontal swipe page turn if swipe distance > 40px and horizontal movement is dominant
       if (Math.abs(diffX) > 40 && Math.abs(diffX) > Math.abs(diffY) * 1.3 && zoomScale <= 1.3) {
-        if (diffX < 0) {
-          // Swiped Left -> Next page
-          setPageNumber(p => (numPages ? Math.min(p + 1, numPages) : p + 1));
+        if (diffX > 0) {
+          // Swiped Left to Right -> Next page
+          handleGoNextPage();
         } else {
-          // Swiped Right -> Previous page
-          setPageNumber(p => Math.max(p - 1, 1));
+          // Swiped Right to Left -> Previous page
+          handleGoPrevPage();
         }
       }
     }
@@ -232,10 +302,10 @@ export default function QuranReader({ isOnline, showToast, currentUser, onReadin
   useEffect(() => {
     if (!activePara) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft' || e.key === 'PageDown') {
-        setPageNumber(p => (numPages ? Math.min(p + 1, numPages) : p + 1));
-      } else if (e.key === 'ArrowRight' || e.key === 'PageUp') {
-        setPageNumber(p => Math.max(p - 1, 1));
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+        handleGoNextPage();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        handleGoPrevPage();
       } else if (e.key === '+' || e.key === '=') {
         setZoomScale(z => Math.min(parseFloat((z + 0.25).toFixed(2)), 3.0));
       } else if (e.key === '-') {
@@ -248,7 +318,7 @@ export default function QuranReader({ isOnline, showToast, currentUser, onReadin
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activePara, numPages]);
+  }, [activePara, numPages, pageNumber, loadedParaNumbers]);
 
   // Measure container for responsive PDF
   useEffect(() => {
@@ -862,7 +932,7 @@ export default function QuranReader({ isOnline, showToast, currentUser, onReadin
             >
               {/* Swipe Hint Banner */}
               <div className="absolute top-2 z-10 bg-black/60 backdrop-blur-md text-white/80 text-[10px] font-semibold px-3 py-1 rounded-full border border-white/10 pointer-events-none select-none">
-                👈 Swipe Left / Right to Turn Pages 👉
+                👈 Swipe Left-to-Right for Next Page | Right-to-Left for Previous Page 👉
               </div>
 
               {/* Scrollable PDF Container */}
@@ -887,30 +957,36 @@ export default function QuranReader({ isOnline, showToast, currentUser, onReadin
 
               {/* Pagination Controls */}
               <div className="w-full max-w-3xl flex items-center justify-between bg-neutral-950 p-3.5 border-t border-neutral-800 shrink-0 shadow-2xl z-20">
+                {/* PREVIOUS BUTTON AT LEFT SIDE */}
                 <button 
-                  disabled={numPages ? pageNumber >= numPages : false} 
-                  onClick={() => setPageNumber(p => p + 1)}
-                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl disabled:opacity-30 active:scale-95 transition-all flex items-center gap-1 text-xs font-bold"
-                  title="Next Page (Swipe Left)"
+                  disabled={pageNumber <= 1 && activePara.number <= 1} 
+                  onClick={handleGoPrevPage}
+                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl disabled:opacity-30 active:scale-95 transition-all flex items-center gap-1.5 text-xs font-bold"
+                  title="Previous Page (Swipe Right-to-Left)"
                 >
                   <ChevronLeft className="w-5 h-5 text-purple-400" />
-                  <span>Next</span>
+                  <span>Previous</span>
                 </button>
 
                 <div className="flex flex-col items-center">
                   <span className="text-white font-extrabold text-sm tracking-wider">
                     PAGE {pageNumber} {numPages ? <span className="text-neutral-500">/ {numPages}</span> : ''}
                   </span>
-                  <span className="text-[9px] text-neutral-400 font-medium">Swipe screen to navigate</span>
+                  <span className="text-[9px] text-purple-300 font-medium text-center">
+                    {numPages && pageNumber >= numPages && activePara.number < 30
+                      ? `End of Para ${activePara.number} • Tap Next for Para ${activePara.number + 1}`
+                      : 'Swipe screen to navigate'}
+                  </span>
                 </div>
 
+                {/* NEXT BUTTON AT RIGHT SIDE */}
                 <button 
-                  disabled={pageNumber <= 1} 
-                  onClick={() => setPageNumber(p => p - 1)}
-                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl disabled:opacity-30 active:scale-95 transition-all flex items-center gap-1 text-xs font-bold"
-                  title="Previous Page (Swipe Right)"
+                  disabled={numPages ? (pageNumber >= numPages && activePara.number >= 30) : false} 
+                  onClick={handleGoNextPage}
+                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl disabled:opacity-30 active:scale-95 transition-all flex items-center gap-1.5 text-xs font-bold"
+                  title="Next Page (Swipe Left-to-Right)"
                 >
-                  <span>Prev</span>
+                  <span>Next</span>
                   <ChevronRight className="w-5 h-5 text-purple-400" />
                 </button>
               </div>
