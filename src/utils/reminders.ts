@@ -147,7 +147,7 @@ export function getRandomMotivation(type: 'namaz' | 'zikar' | 'quran'): string {
   return list[Math.floor(Math.random() * list.length)];
 }
 
-export function sendIslamicNotification(options: {
+export async function sendIslamicNotification(options: {
   type: 'namaz' | 'zikar' | 'quran';
   title: string;
   body: string;
@@ -157,18 +157,53 @@ export function sendIslamicNotification(options: {
   unlockAudioContext();
   playSalahAlarmSound();
 
-  const quoteText = options.quote || getRandomMotivation(options.type);
+  const notificationTitle = options.title;
+  const notificationBody = options.body;
+  const notificationData = {
+    url: `/${options.tab}`,
+    tab: options.tab,
+    type: options.type
+  };
 
-  // Dispatch Native System Browser / OS Notification Area Alert
+  // 1. Try ServiceWorker Registration showNotification for persistent PWA notifications
+  if ('serviceWorker' in navigator && 'Notification' in window) {
+    if (Notification.permission === 'granted') {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        if (registration && registration.showNotification) {
+          const swOptions: NotificationOptions & { requireInteraction?: boolean } = {
+            body: notificationBody,
+            icon: '/favicon_192_x_192.png',
+            badge: '/favicon_32_x_32.png',
+            tag: `${options.type}-${Date.now()}`,
+            requireInteraction: true,
+            data: notificationData
+          };
+          await registration.showNotification(notificationTitle, swOptions as NotificationOptions);
+          return;
+        }
+      } catch (err) {
+        console.warn('ServiceWorker showNotification failed, falling back to standard Notification:', err);
+      }
+    } else if (Notification.permission !== 'denied') {
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        sendIslamicNotification(options);
+        return;
+      }
+    }
+  }
+
+  // 2. Fallback to standard Browser Notification object
   if ('Notification' in window) {
     if (Notification.permission === 'granted') {
       try {
-        const notification = new Notification(options.title, {
-          body: `${options.body}\n\n💡 ${quoteText}`,
+        const notification = new Notification(notificationTitle, {
+          body: notificationBody,
           icon: '/favicon.ico',
           badge: '/favicon.ico',
           tag: `${options.type}-${Date.now()}`,
-          data: { tab: options.tab }
+          data: notificationData
         });
 
         notification.onclick = (event) => {

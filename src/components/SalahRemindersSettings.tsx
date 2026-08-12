@@ -762,12 +762,6 @@ export default function SalahRemindersSettings({ showToast, onSettingsChange }: 
                 </div>
               </div>
 
-              {/* Motivational Quote Sample */}
-              <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-start gap-2 text-xs italic text-blue-700 dark:text-blue-300">
-                <Quote className="w-4 h-4 shrink-0 text-blue-500 not-italic mt-0.5" />
-                <span>"{getRandomMotivation('zikar')}"</span>
-              </div>
-
               <button
                 onClick={handleTestZikarNotification}
                 className="w-full py-2 rounded-xl border border-dashed border-blue-500/50 bg-blue-500/5 hover:bg-blue-500/10 text-blue-600 dark:text-blue-400 font-extrabold text-xs flex items-center justify-center gap-2 transition-all active:scale-95"
@@ -940,12 +934,6 @@ export default function SalahRemindersSettings({ showToast, onSettingsChange }: 
                     </div>
                   ))}
                 </div>
-              </div>
-
-              {/* Motivational Quote Sample */}
-              <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-start gap-2 text-xs italic text-purple-700 dark:text-purple-300">
-                <Quote className="w-4 h-4 shrink-0 text-purple-500 not-italic mt-0.5" />
-                <span>"{getRandomMotivation('quran')}"</span>
               </div>
 
               <button
