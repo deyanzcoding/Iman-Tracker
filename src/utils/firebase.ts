@@ -15,6 +15,9 @@ import {
 } from 'firebase/auth';
 import { 
   getFirestore, 
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   setLogLevel,
   doc, 
   setDoc, 
@@ -40,15 +43,25 @@ if (isFirebaseConfigured) {
     setLogLevel('silent');
     app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     auth = getAuth(app);
-    // Support named Firestore database if specified in config
-    const configAny = firebaseConfig as any;
-    if (configAny.firestoreDatabaseId && configAny.firestoreDatabaseId !== '(default)') {
-      db = getFirestore(app, configAny.firestoreDatabaseId);
-    } else {
-      db = getFirestore(app);
-    }
     googleProvider = new GoogleAuthProvider();
     googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+    // Enable Firestore persistent offline caching via IndexedDB (multi-tab support)
+    const configAny = firebaseConfig as any;
+    const dbId = (configAny.firestoreDatabaseId && configAny.firestoreDatabaseId !== '(default)') 
+      ? configAny.firestoreDatabaseId 
+      : undefined;
+
+    try {
+      db = initializeFirestore(app, {
+        localCache: persistentLocalCache({
+          tabManager: persistentMultipleTabManager()
+        })
+      }, dbId);
+    } catch (cacheErr) {
+      console.warn('Firestore persistent offline cache setup fallback:', cacheErr);
+      db = dbId ? getFirestore(app, dbId) : getFirestore(app);
+    }
 
     // Handle redirect result if redirected from Google Auth
     getRedirectResult(auth).then((result) => {
@@ -240,3 +253,126 @@ export async function getUserAppData(userId: string): Promise<any | null> {
     return null;
   }
 }
+
+// ─── GUEST DATA MERGE ON AUTHENTICATION ───
+
+export function mergeGuestDataWithCloudState(guestState: any, cloudState: any): any {
+  if (!guestState) return cloudState;
+  if (!cloudState) return guestState;
+
+  // 1. Merge Namaz logs
+  const mergedNamaz: Record<string, any> = { ...(cloudState.namaz || {}) };
+  if (guestState.namaz) {
+    Object.keys(guestState.namaz).forEach((date) => {
+      if (!mergedNamaz[date]) {
+        mergedNamaz[date] = guestState.namaz[date];
+      } else {
+        mergedNamaz[date] = { ...mergedNamaz[date] };
+        Object.keys(guestState.namaz[date]).forEach((prayerKey) => {
+          const guestVal = guestState.namaz[date][prayerKey];
+          // Guest non-zero logs take precedence or preserve existing logs
+          if (guestVal !== undefined && guestVal !== 0) {
+            mergedNamaz[date][prayerKey] = guestVal;
+          }
+        });
+      }
+    });
+  }
+
+  // 2. Merge Duas (Zikar items)
+  const cloudDuas: any[] = Array.isArray(cloudState.duas) ? [...cloudState.duas] : [];
+  const guestDuas: any[] = Array.isArray(guestState.duas) ? guestState.duas : [];
+
+  guestDuas.forEach((gDua) => {
+    const existingIdx = cloudDuas.findIndex(
+      (cDua) => cDua.id === gDua.id || (cDua.name && cDua.name.toLowerCase() === gDua.name?.toLowerCase())
+    );
+    if (existingIdx !== -1) {
+      const cDua = cloudDuas[existingIdx];
+      const maxDaily = Math.max(cDua.daily || 1, gDua.daily || 1);
+      const mergedSessions = Array.from(
+        { length: maxDaily },
+        (_, i) => Math.max(cDua.sessions?.[i] || 0, gDua.sessions?.[i] || 0)
+      );
+      const mergedCompletedDates = Array.from(
+        new Set([...(cDua.completedDates || []), ...(gDua.completedDates || [])])
+      );
+      cloudDuas[existingIdx] = {
+        ...cDua,
+        sessions: mergedSessions,
+        completedDates: mergedCompletedDates,
+        currentSession: Math.max(cDua.currentSession || 0, gDua.currentSession || 0)
+      };
+    } else {
+      cloudDuas.push(gDua);
+    }
+  });
+
+  // 3. Merge Deleted Duas
+  const cloudDeleted: any[] = Array.isArray(cloudState.deletedDuas) ? [...cloudState.deletedDuas] : [];
+  const guestDeleted: any[] = Array.isArray(guestState.deletedDuas) ? guestState.deletedDuas : [];
+  const mergedDeletedMap = new Map();
+  [...cloudDeleted, ...guestDeleted].forEach((item) => {
+    const key = item.id || item.name;
+    if (key) mergedDeletedMap.set(key, item);
+  });
+
+  // 4. Merge Best Streaks & Goals
+  const bestStreak = Math.max(cloudState.bestStreak || 0, guestState.bestStreak || 0);
+  const goal = guestState.goal || cloudState.goal || 90;
+  const zikarGoal = guestState.zikarGoal || cloudState.zikarGoal || 90;
+  const quranGoal = guestState.quranGoal || cloudState.quranGoal || 90;
+  const quranDailyTargetMins = guestState.quranDailyTargetMins || cloudState.quranDailyTargetMins || 30;
+
+  return {
+    ...cloudState,
+    namaz: mergedNamaz,
+    duas: cloudDuas,
+    deletedDuas: Array.from(mergedDeletedMap.values()),
+    bestStreak,
+    goal,
+    zikarGoal,
+    quranGoal,
+    quranDailyTargetMins,
+    dark: guestState.dark !== undefined ? guestState.dark : cloudState.dark
+  };
+}
+
+export async function handleAuthLoginMerge(user: User, localGuestState: any): Promise<{ mergedState: any; mergedData: boolean }> {
+  if (!user) return { mergedState: localGuestState, mergedData: false };
+
+  try {
+    const cloudState = await getUserAppData(user.uid);
+    let mergedState: any;
+    let didMergeGuestData = false;
+
+    if (localGuestState && Object.keys(localGuestState).length > 0 && localGuestState.namaz) {
+      if (cloudState) {
+        mergedState = mergeGuestDataWithCloudState(localGuestState, cloudState);
+      } else {
+        mergedState = localGuestState;
+      }
+      didMergeGuestData = true;
+    } else {
+      mergedState = cloudState || localGuestState;
+    }
+
+    if (mergedState) {
+      await saveUserAppData(user.uid, mergedState);
+      await saveUserProfile(user);
+      
+      // Clear temporary local guest state after merging into Firestore
+      try {
+        localStorage.removeItem('namaztrack_pro');
+      } catch (e) {
+        console.warn('Could not remove temporary local guest state:', e);
+      }
+    }
+
+    return { mergedState, mergedData: didMergeGuestData };
+  } catch (err) {
+    console.error('Error merging guest state with cloud state:', err);
+    return { mergedState: localGuestState, mergedData: false };
+  }
+}
+

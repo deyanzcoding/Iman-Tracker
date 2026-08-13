@@ -16,10 +16,11 @@ import BottomSheet from './components/BottomSheet';
 import ConfirmDialog from './components/ConfirmDialog';
 import AuthModal from './components/AuthModal';
 import IslamicBannerAlert from './components/IslamicBannerAlert';
+import NetworkStatusIndicator from './components/NetworkStatusIndicator';
 import { Home, BookOpen, Book, BarChart2, BarChart3, Activity, Settings as SettingsIcon, User as UserIcon, ShieldCheck, CheckCircle2, Edit3 } from 'lucide-react';
 import appLogo from './assets/images/favicon_1784528732122.jpg';
 import { User } from 'firebase/auth';
-import { subscribeToAuthChanges, getUserAppData, saveUserAppData } from './utils/firebase';
+import { subscribeToAuthChanges, getUserAppData, saveUserAppData, handleAuthLoginMerge } from './utils/firebase';
 import { getStoredSalahSettings, sendSalahNotification, initAudioUnlockListener, SalahSettings } from './utils/salah';
 import { getStoredZikarSettings, getStoredQuranSettings, sendIslamicNotification, getRandomMotivation } from './utils/reminders';
 
@@ -113,27 +114,43 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = subscribeToAuthChanges((user) => {
+    const unsubscribe = subscribeToAuthChanges(async (user) => {
       setCurrentUser(user);
       if (user) {
-        // Sync cloud data on login
-        getUserAppData(user.uid).then((cloudState) => {
-          if (cloudState) {
-            setState((prev) => ({
-              ...prev,
-              ...cloudState
-            }));
+        // Read local guest state to merge into Firestore upon Google Auth sign-in
+        let localGuestState: any = null;
+        try {
+          const raw = localStorage.getItem('namaztrack_pro');
+          if (raw) localGuestState = JSON.parse(raw);
+        } catch (e) {
+          console.warn('Error parsing guest state:', e);
+        }
+
+        const { mergedState, mergedData } = await handleAuthLoginMerge(user, localGuestState || state);
+        if (mergedState) {
+          setState((prev) => ({
+            ...prev,
+            ...mergedState
+          }));
+          if (mergedData) {
+            showToast('✨ Offline guest data merged & synced to cloud!');
           }
-        }).catch(console.error);
+        }
       }
     });
     return () => unsubscribe();
   }, []);
 
-  // Save state to cloud on state updates when logged in
+  // Save state: To cloud when logged in, or to localStorage for guest users
   useEffect(() => {
     if (currentUser) {
       saveUserAppData(currentUser.uid, state).catch(console.error);
+    } else {
+      try {
+        localStorage.setItem('namaztrack_pro', JSON.stringify(state));
+      } catch (e) {
+        console.error('Error saving guest state to localStorage:', e);
+      }
     }
   }, [state, currentUser]);
 
@@ -826,6 +843,9 @@ export default function App() {
       {/* 430px Responsive Native Mobile Container with Clean Bezel and Premium Drop Shadow */}
       <div className="w-full max-w-[430px] h-screen md:h-[850px] md:max-h-[920px] md:rounded-[48px] md:border-[12px] md:border-[#1A1A1A] bg-[var(--surface)] flex flex-col relative overflow-hidden md:shadow-[0_32px_64px_-12px_rgba(0,0,0,0.2)]">
         
+        {/* Network status indicator (online/offline state) */}
+        <NetworkStatusIndicator />
+
         {/* APP SPLASH SCREEN */}
         <AnimatePresence>
           {showSplash && (
