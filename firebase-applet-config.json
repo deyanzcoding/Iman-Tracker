@@ -1,12 +1,12 @@
 {
-  "projectId": "titanium-temple-3dw25",
-  "appId": "1:343498228807:web:617aaf85606748d75f1d62",
-  "apiKey": "AIzaSyAIUTXidtG70NhveHCk_0jPdYuyB0uCs9c",
-  "authDomain": "titanium-temple-3dw25.firebaseapp.com",
+  "projectId": "iman-tracker1",
+  "appId": "1:114569805826:web:c631b8e37f7db79276271b",
+  "apiKey": "AIzaSyAy4xvLjEaf8JpWCjd0_Bnnmz0_89XG5rk",
+  "authDomain": "iman-tracker1.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-imantracker-fc68bc28-62be-4dbd-ba6b-1776a2c38ad3",
-  "storageBucket": "titanium-temple-3dw25.firebasestorage.app",
-  "messagingSenderId": "343498228807",
+  "storageBucket": "iman-tracker1.firebasestorage.app",
+  "messagingSenderId": "114569805826",
   "measurementId": "",
-  "oAuthClientId": "343498228807-nng3ot973uvjcn8k5th6vtvd32032op3.apps.googleusercontent.com",
+  "oAuthClientId": "114569805826-su99ib2o2lng702uelglgqdmpfvn66gi.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }
